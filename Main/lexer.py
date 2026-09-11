@@ -99,31 +99,26 @@ def find_column(input_text, token):
 
 def t_DATE_LITERAL(t):
     r'\d{4}-\d{2}-\d{2}'
-    t.column = find_column(t.lexer.lexdata, t)
     return t
 
 def t_NUMBER_DECIMAL(t):
     r'\d+\.\d+'
     t.value = float(t.value)
-    t.column = find_column(t.lexer.lexdata, t)
     return t
 
 def t_NUMBER_INT(t):
     r'\d+'
     t.value = int(t.value)
-    t.column = find_column(t.lexer.lexdata, t)
     return t
 
 def t_STRING_LITERAL(t):
     r'"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\''
     t.value = t.value[1:-1]
-    t.column = find_column(t.lexer.lexdata, t)
     return t
 
 def t_IDENTIFIER(t):
     r'[a-zA-Z][a-zA-Z0-9_]*'
     t.type = reserved.get(t.value, 'IDENTIFIER')
-    t.column = find_column(t.lexer.lexdata, t)
     return t
 
 def t_newline(t):
