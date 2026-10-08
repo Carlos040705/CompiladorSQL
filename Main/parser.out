@@ -59,54 +59,55 @@ Rule 19    restriccion -> KEY
 Rule 20    restriccion -> EXTERNAL
 Rule 21    restriccion -> DEFAULT ASSIGN valor
 Rule 22    operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN
-Rule 23    metodo -> NEW
-Rule 24    metodo -> FIND
+Rule 23    metodo -> FIND
+Rule 24    metodo -> NEW
 Rule 25    metodo -> MODIFY
 Rule 26    metodo -> REMOVE
 Rule 27    metodo -> ADD
-Rule 28    argumentos_opt -> lista_argumentos
-Rule 29    argumentos_opt -> <empty>
-Rule 30    lista_argumentos -> parametro COMMA lista_argumentos
-Rule 31    lista_argumentos -> parametro
-Rule 32    parametro -> IDENTIFIER ASSIGN expresion
-Rule 33    expresion -> valor
-Rule 34    valor -> STRING_LITERAL
-Rule 35    valor -> NUMBER_INT
-Rule 36    valor -> NUMBER_DECIMAL
-Rule 37    valor -> DATE_LITERAL
-Rule 38    valor -> TRUE
-Rule 39    valor -> FALSE
-Rule 40    valor -> EMPTY
-Rule 41    valor -> IDENTIFIER
+Rule 28    metodo -> IDENTIFIER
+Rule 29    argumentos_opt -> lista_argumentos
+Rule 30    argumentos_opt -> <empty>
+Rule 31    lista_argumentos -> parametro COMMA lista_argumentos
+Rule 32    lista_argumentos -> parametro
+Rule 33    parametro -> IDENTIFIER ASSIGN expresion
+Rule 34    expresion -> valor
+Rule 35    valor -> STRING_LITERAL
+Rule 36    valor -> NUMBER_INT
+Rule 37    valor -> NUMBER_DECIMAL
+Rule 38    valor -> DATE_LITERAL
+Rule 39    valor -> TRUE
+Rule 40    valor -> FALSE
+Rule 41    valor -> EMPTY
+Rule 42    valor -> IDENTIFIER
 
 Terminals, with rules where they appear
 
 ADD                  : 27
 ALIAS                : 
 AND                  : 
-ASSIGN               : 21 32
+ASSIGN               : 21 33
 AUTO                 : 10
 BOOL                 : 13
 CHANGE               : 
 COLON                : 5 8
-COMMA                : 14 30
+COMMA                : 14 31
 COUNT                : 
-DATE_LITERAL         : 37
+DATE_LITERAL         : 38
 DECIMAL              : 14
 DEFAULT              : 21
 DIVIDE               : 
 DOT                  : 22
 DOWN                 : 
-EMPTY                : 40
+EMPTY                : 41
 EQUAL                : 
 ERASE                : 
 EXTERNAL             : 20
-FALSE                : 39
-FIND                 : 24
+FALSE                : 40
+FIND                 : 23
 GREATER              : 
 GREATER_EQUAL        : 
 GROUP                : 
-IDENTIFIER           : 5 8 22 32 41
+IDENTIFIER           : 5 8 22 28 33 42
 IF                   : 
 IFGROUP              : 
 IN                   : 
@@ -120,12 +121,12 @@ MINUS                :
 MODEL                : 5
 MODIFY               : 25
 MODULO               : 
-NEW                  : 23
+NEW                  : 24
 NOT                  : 
 NOT_EQUAL            : 
 NUM                  : 11
-NUMBER_DECIMAL       : 36
-NUMBER_INT           : 14 14 35
+NUMBER_DECIMAL       : 37
+NUMBER_INT           : 14 14 36
 OR                   : 
 PLUS                 : 
 RANGE                : 
@@ -135,11 +136,11 @@ RPAREN               : 14 22
 SIMILAR              : 
 SKIP                 : 
 STRING               : 9
-STRING_LITERAL       : 34
+STRING_LITERAL       : 35
 TAKE                 : 
 TEXT                 : 12
 TIMES                : 
-TRUE                 : 38
+TRUE                 : 39
 UNIQUE               : 18
 UP                   : 
 VALIDATE             : 
@@ -150,18 +151,18 @@ Nonterminals, with rules where they appear
 argumentos_opt       : 22
 campo                : 6 7
 declaracion_modelo   : 3
-expresion            : 32
-lista_argumentos     : 28 30
+expresion            : 33
+lista_argumentos     : 29 31
 lista_campos         : 5 6
 metodo               : 22
 operacion_db         : 4
-parametro            : 30 31
+parametro            : 31 32
 programa             : 1 0
 restriccion          : 15
 restricciones_opt    : 8 15
 sentencia            : 1 2
 tipo_dato            : 8
-valor                : 21 33
+valor                : 21 34
 
 Parsing method: LALR
 
@@ -258,19 +259,21 @@ state 8
 state 9
 
     (22) operacion_db -> IDENTIFIER DOT . metodo LPAREN argumentos_opt RPAREN
-    (23) metodo -> . NEW
-    (24) metodo -> . FIND
+    (23) metodo -> . FIND
+    (24) metodo -> . NEW
     (25) metodo -> . MODIFY
     (26) metodo -> . REMOVE
     (27) metodo -> . ADD
+    (28) metodo -> . IDENTIFIER
 
-    NEW             shift and go to state 12
     FIND            shift and go to state 13
-    MODIFY          shift and go to state 14
-    REMOVE          shift and go to state 15
-    ADD             shift and go to state 16
+    NEW             shift and go to state 14
+    MODIFY          shift and go to state 15
+    REMOVE          shift and go to state 16
+    ADD             shift and go to state 17
+    IDENTIFIER      shift and go to state 11
 
-    metodo                         shift and go to state 11
+    metodo                         shift and go to state 12
 
 state 10
 
@@ -279,61 +282,68 @@ state 10
     (7) lista_campos -> . campo
     (8) campo -> . IDENTIFIER COLON tipo_dato restricciones_opt
 
-    IDENTIFIER      shift and go to state 17
+    IDENTIFIER      shift and go to state 18
 
-    lista_campos                   shift and go to state 18
-    campo                          shift and go to state 19
+    lista_campos                   shift and go to state 19
+    campo                          shift and go to state 20
 
 state 11
 
-    (22) operacion_db -> IDENTIFIER DOT metodo . LPAREN argumentos_opt RPAREN
+    (28) metodo -> IDENTIFIER .
 
-    LPAREN          shift and go to state 20
+    LPAREN          reduce using rule 28 (metodo -> IDENTIFIER .)
 
 
 state 12
 
-    (23) metodo -> NEW .
+    (22) operacion_db -> IDENTIFIER DOT metodo . LPAREN argumentos_opt RPAREN
 
-    LPAREN          reduce using rule 23 (metodo -> NEW .)
+    LPAREN          shift and go to state 21
 
 
 state 13
 
-    (24) metodo -> FIND .
+    (23) metodo -> FIND .
 
-    LPAREN          reduce using rule 24 (metodo -> FIND .)
+    LPAREN          reduce using rule 23 (metodo -> FIND .)
 
 
 state 14
+
+    (24) metodo -> NEW .
+
+    LPAREN          reduce using rule 24 (metodo -> NEW .)
+
+
+state 15
 
     (25) metodo -> MODIFY .
 
     LPAREN          reduce using rule 25 (metodo -> MODIFY .)
 
 
-state 15
+state 16
 
     (26) metodo -> REMOVE .
 
     LPAREN          reduce using rule 26 (metodo -> REMOVE .)
 
 
-state 16
+state 17
 
     (27) metodo -> ADD .
 
     LPAREN          reduce using rule 27 (metodo -> ADD .)
 
 
-state 17
+state 18
 
     (8) campo -> IDENTIFIER . COLON tipo_dato restricciones_opt
 
-    COLON           shift and go to state 21
+    COLON           shift and go to state 22
 
 
-state 18
+state 19
 
     (5) declaracion_modelo -> MODEL IDENTIFIER COLON lista_campos .
 
@@ -342,7 +352,7 @@ state 18
     $end            reduce using rule 5 (declaracion_modelo -> MODEL IDENTIFIER COLON lista_campos .)
 
 
-state 19
+state 20
 
     (6) lista_campos -> campo . lista_campos
     (7) lista_campos -> campo .
@@ -353,30 +363,30 @@ state 19
   ! shift/reduce conflict for IDENTIFIER resolved as shift
     MODEL           reduce using rule 7 (lista_campos -> campo .)
     $end            reduce using rule 7 (lista_campos -> campo .)
-    IDENTIFIER      shift and go to state 17
+    IDENTIFIER      shift and go to state 18
 
   ! IDENTIFIER      [ reduce using rule 7 (lista_campos -> campo .) ]
 
-    campo                          shift and go to state 19
-    lista_campos                   shift and go to state 22
-
-state 20
-
-    (22) operacion_db -> IDENTIFIER DOT metodo LPAREN . argumentos_opt RPAREN
-    (28) argumentos_opt -> . lista_argumentos
-    (29) argumentos_opt -> .
-    (30) lista_argumentos -> . parametro COMMA lista_argumentos
-    (31) lista_argumentos -> . parametro
-    (32) parametro -> . IDENTIFIER ASSIGN expresion
-
-    RPAREN          reduce using rule 29 (argumentos_opt -> .)
-    IDENTIFIER      shift and go to state 23
-
-    argumentos_opt                 shift and go to state 24
-    lista_argumentos               shift and go to state 25
-    parametro                      shift and go to state 26
+    campo                          shift and go to state 20
+    lista_campos                   shift and go to state 23
 
 state 21
+
+    (22) operacion_db -> IDENTIFIER DOT metodo LPAREN . argumentos_opt RPAREN
+    (29) argumentos_opt -> . lista_argumentos
+    (30) argumentos_opt -> .
+    (31) lista_argumentos -> . parametro COMMA lista_argumentos
+    (32) lista_argumentos -> . parametro
+    (33) parametro -> . IDENTIFIER ASSIGN expresion
+
+    RPAREN          reduce using rule 30 (argumentos_opt -> .)
+    IDENTIFIER      shift and go to state 24
+
+    argumentos_opt                 shift and go to state 25
+    lista_argumentos               shift and go to state 26
+    parametro                      shift and go to state 27
+
+state 22
 
     (8) campo -> IDENTIFIER COLON . tipo_dato restricciones_opt
     (9) tipo_dato -> . STRING
@@ -386,16 +396,16 @@ state 21
     (13) tipo_dato -> . BOOL
     (14) tipo_dato -> . DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN
 
-    STRING          shift and go to state 28
-    AUTO            shift and go to state 29
-    NUM             shift and go to state 30
-    TEXT            shift and go to state 31
-    BOOL            shift and go to state 32
-    DECIMAL         shift and go to state 33
+    STRING          shift and go to state 29
+    AUTO            shift and go to state 30
+    NUM             shift and go to state 31
+    TEXT            shift and go to state 32
+    BOOL            shift and go to state 33
+    DECIMAL         shift and go to state 34
 
-    tipo_dato                      shift and go to state 27
+    tipo_dato                      shift and go to state 28
 
-state 22
+state 23
 
     (6) lista_campos -> campo lista_campos .
 
@@ -404,37 +414,37 @@ state 22
     $end            reduce using rule 6 (lista_campos -> campo lista_campos .)
 
 
-state 23
-
-    (32) parametro -> IDENTIFIER . ASSIGN expresion
-
-    ASSIGN          shift and go to state 34
-
-
 state 24
 
-    (22) operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt . RPAREN
+    (33) parametro -> IDENTIFIER . ASSIGN expresion
 
-    RPAREN          shift and go to state 35
+    ASSIGN          shift and go to state 35
 
 
 state 25
 
-    (28) argumentos_opt -> lista_argumentos .
+    (22) operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt . RPAREN
 
-    RPAREN          reduce using rule 28 (argumentos_opt -> lista_argumentos .)
+    RPAREN          shift and go to state 36
 
 
 state 26
 
-    (30) lista_argumentos -> parametro . COMMA lista_argumentos
-    (31) lista_argumentos -> parametro .
+    (29) argumentos_opt -> lista_argumentos .
 
-    COMMA           shift and go to state 36
-    RPAREN          reduce using rule 31 (lista_argumentos -> parametro .)
+    RPAREN          reduce using rule 29 (argumentos_opt -> lista_argumentos .)
 
 
 state 27
+
+    (31) lista_argumentos -> parametro . COMMA lista_argumentos
+    (32) lista_argumentos -> parametro .
+
+    COMMA           shift and go to state 37
+    RPAREN          reduce using rule 32 (lista_argumentos -> parametro .)
+
+
+state 28
 
     (8) campo -> IDENTIFIER COLON tipo_dato . restricciones_opt
     (15) restricciones_opt -> . restriccion restricciones_opt
@@ -448,16 +458,16 @@ state 27
     IDENTIFIER      reduce using rule 16 (restricciones_opt -> .)
     MODEL           reduce using rule 16 (restricciones_opt -> .)
     $end            reduce using rule 16 (restricciones_opt -> .)
-    REQUIRED        shift and go to state 39
-    UNIQUE          shift and go to state 40
-    KEY             shift and go to state 41
-    EXTERNAL        shift and go to state 42
-    DEFAULT         shift and go to state 43
+    REQUIRED        shift and go to state 40
+    UNIQUE          shift and go to state 41
+    KEY             shift and go to state 42
+    EXTERNAL        shift and go to state 43
+    DEFAULT         shift and go to state 44
 
-    restricciones_opt              shift and go to state 37
-    restriccion                    shift and go to state 38
+    restricciones_opt              shift and go to state 38
+    restriccion                    shift and go to state 39
 
-state 28
+state 29
 
     (9) tipo_dato -> STRING .
 
@@ -471,7 +481,7 @@ state 28
     $end            reduce using rule 9 (tipo_dato -> STRING .)
 
 
-state 29
+state 30
 
     (10) tipo_dato -> AUTO .
 
@@ -485,7 +495,7 @@ state 29
     $end            reduce using rule 10 (tipo_dato -> AUTO .)
 
 
-state 30
+state 31
 
     (11) tipo_dato -> NUM .
 
@@ -499,7 +509,7 @@ state 30
     $end            reduce using rule 11 (tipo_dato -> NUM .)
 
 
-state 31
+state 32
 
     (12) tipo_dato -> TEXT .
 
@@ -513,7 +523,7 @@ state 31
     $end            reduce using rule 12 (tipo_dato -> TEXT .)
 
 
-state 32
+state 33
 
     (13) tipo_dato -> BOOL .
 
@@ -527,39 +537,39 @@ state 32
     $end            reduce using rule 13 (tipo_dato -> BOOL .)
 
 
-state 33
+state 34
 
     (14) tipo_dato -> DECIMAL . LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN
 
-    LPAREN          shift and go to state 44
+    LPAREN          shift and go to state 45
 
-
-state 34
-
-    (32) parametro -> IDENTIFIER ASSIGN . expresion
-    (33) expresion -> . valor
-    (34) valor -> . STRING_LITERAL
-    (35) valor -> . NUMBER_INT
-    (36) valor -> . NUMBER_DECIMAL
-    (37) valor -> . DATE_LITERAL
-    (38) valor -> . TRUE
-    (39) valor -> . FALSE
-    (40) valor -> . EMPTY
-    (41) valor -> . IDENTIFIER
-
-    STRING_LITERAL  shift and go to state 48
-    NUMBER_INT      shift and go to state 49
-    NUMBER_DECIMAL  shift and go to state 50
-    DATE_LITERAL    shift and go to state 51
-    TRUE            shift and go to state 52
-    FALSE           shift and go to state 53
-    EMPTY           shift and go to state 54
-    IDENTIFIER      shift and go to state 45
-
-    expresion                      shift and go to state 46
-    valor                          shift and go to state 47
 
 state 35
+
+    (33) parametro -> IDENTIFIER ASSIGN . expresion
+    (34) expresion -> . valor
+    (35) valor -> . STRING_LITERAL
+    (36) valor -> . NUMBER_INT
+    (37) valor -> . NUMBER_DECIMAL
+    (38) valor -> . DATE_LITERAL
+    (39) valor -> . TRUE
+    (40) valor -> . FALSE
+    (41) valor -> . EMPTY
+    (42) valor -> . IDENTIFIER
+
+    STRING_LITERAL  shift and go to state 49
+    NUMBER_INT      shift and go to state 50
+    NUMBER_DECIMAL  shift and go to state 51
+    DATE_LITERAL    shift and go to state 52
+    TRUE            shift and go to state 53
+    FALSE           shift and go to state 54
+    EMPTY           shift and go to state 55
+    IDENTIFIER      shift and go to state 46
+
+    expresion                      shift and go to state 47
+    valor                          shift and go to state 48
+
+state 36
 
     (22) operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN .
 
@@ -568,19 +578,19 @@ state 35
     $end            reduce using rule 22 (operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN .)
 
 
-state 36
-
-    (30) lista_argumentos -> parametro COMMA . lista_argumentos
-    (30) lista_argumentos -> . parametro COMMA lista_argumentos
-    (31) lista_argumentos -> . parametro
-    (32) parametro -> . IDENTIFIER ASSIGN expresion
-
-    IDENTIFIER      shift and go to state 23
-
-    parametro                      shift and go to state 26
-    lista_argumentos               shift and go to state 55
-
 state 37
+
+    (31) lista_argumentos -> parametro COMMA . lista_argumentos
+    (31) lista_argumentos -> . parametro COMMA lista_argumentos
+    (32) lista_argumentos -> . parametro
+    (33) parametro -> . IDENTIFIER ASSIGN expresion
+
+    IDENTIFIER      shift and go to state 24
+
+    parametro                      shift and go to state 27
+    lista_argumentos               shift and go to state 56
+
+state 38
 
     (8) campo -> IDENTIFIER COLON tipo_dato restricciones_opt .
 
@@ -589,7 +599,7 @@ state 37
     $end            reduce using rule 8 (campo -> IDENTIFIER COLON tipo_dato restricciones_opt .)
 
 
-state 38
+state 39
 
     (15) restricciones_opt -> restriccion . restricciones_opt
     (15) restricciones_opt -> . restriccion restricciones_opt
@@ -603,16 +613,16 @@ state 38
     IDENTIFIER      reduce using rule 16 (restricciones_opt -> .)
     MODEL           reduce using rule 16 (restricciones_opt -> .)
     $end            reduce using rule 16 (restricciones_opt -> .)
-    REQUIRED        shift and go to state 39
-    UNIQUE          shift and go to state 40
-    KEY             shift and go to state 41
-    EXTERNAL        shift and go to state 42
-    DEFAULT         shift and go to state 43
+    REQUIRED        shift and go to state 40
+    UNIQUE          shift and go to state 41
+    KEY             shift and go to state 42
+    EXTERNAL        shift and go to state 43
+    DEFAULT         shift and go to state 44
 
-    restriccion                    shift and go to state 38
-    restricciones_opt              shift and go to state 56
+    restriccion                    shift and go to state 39
+    restricciones_opt              shift and go to state 57
 
-state 39
+state 40
 
     (17) restriccion -> REQUIRED .
 
@@ -626,7 +636,7 @@ state 39
     $end            reduce using rule 17 (restriccion -> REQUIRED .)
 
 
-state 40
+state 41
 
     (18) restriccion -> UNIQUE .
 
@@ -640,7 +650,7 @@ state 40
     $end            reduce using rule 18 (restriccion -> UNIQUE .)
 
 
-state 41
+state 42
 
     (19) restriccion -> KEY .
 
@@ -654,7 +664,7 @@ state 41
     $end            reduce using rule 19 (restriccion -> KEY .)
 
 
-state 42
+state 43
 
     (20) restriccion -> EXTERNAL .
 
@@ -668,172 +678,172 @@ state 42
     $end            reduce using rule 20 (restriccion -> EXTERNAL .)
 
 
-state 43
+state 44
 
     (21) restriccion -> DEFAULT . ASSIGN valor
 
-    ASSIGN          shift and go to state 57
-
-
-state 44
-
-    (14) tipo_dato -> DECIMAL LPAREN . NUMBER_INT COMMA NUMBER_INT RPAREN
-
-    NUMBER_INT      shift and go to state 58
+    ASSIGN          shift and go to state 58
 
 
 state 45
 
-    (41) valor -> IDENTIFIER .
+    (14) tipo_dato -> DECIMAL LPAREN . NUMBER_INT COMMA NUMBER_INT RPAREN
 
-    COMMA           reduce using rule 41 (valor -> IDENTIFIER .)
-    RPAREN          reduce using rule 41 (valor -> IDENTIFIER .)
-    REQUIRED        reduce using rule 41 (valor -> IDENTIFIER .)
-    UNIQUE          reduce using rule 41 (valor -> IDENTIFIER .)
-    KEY             reduce using rule 41 (valor -> IDENTIFIER .)
-    EXTERNAL        reduce using rule 41 (valor -> IDENTIFIER .)
-    DEFAULT         reduce using rule 41 (valor -> IDENTIFIER .)
-    IDENTIFIER      reduce using rule 41 (valor -> IDENTIFIER .)
-    MODEL           reduce using rule 41 (valor -> IDENTIFIER .)
-    $end            reduce using rule 41 (valor -> IDENTIFIER .)
+    NUMBER_INT      shift and go to state 59
 
 
 state 46
 
-    (32) parametro -> IDENTIFIER ASSIGN expresion .
+    (42) valor -> IDENTIFIER .
 
-    COMMA           reduce using rule 32 (parametro -> IDENTIFIER ASSIGN expresion .)
-    RPAREN          reduce using rule 32 (parametro -> IDENTIFIER ASSIGN expresion .)
+    COMMA           reduce using rule 42 (valor -> IDENTIFIER .)
+    RPAREN          reduce using rule 42 (valor -> IDENTIFIER .)
+    REQUIRED        reduce using rule 42 (valor -> IDENTIFIER .)
+    UNIQUE          reduce using rule 42 (valor -> IDENTIFIER .)
+    KEY             reduce using rule 42 (valor -> IDENTIFIER .)
+    EXTERNAL        reduce using rule 42 (valor -> IDENTIFIER .)
+    DEFAULT         reduce using rule 42 (valor -> IDENTIFIER .)
+    IDENTIFIER      reduce using rule 42 (valor -> IDENTIFIER .)
+    MODEL           reduce using rule 42 (valor -> IDENTIFIER .)
+    $end            reduce using rule 42 (valor -> IDENTIFIER .)
 
 
 state 47
 
-    (33) expresion -> valor .
+    (33) parametro -> IDENTIFIER ASSIGN expresion .
 
-    COMMA           reduce using rule 33 (expresion -> valor .)
-    RPAREN          reduce using rule 33 (expresion -> valor .)
+    COMMA           reduce using rule 33 (parametro -> IDENTIFIER ASSIGN expresion .)
+    RPAREN          reduce using rule 33 (parametro -> IDENTIFIER ASSIGN expresion .)
 
 
 state 48
 
-    (34) valor -> STRING_LITERAL .
+    (34) expresion -> valor .
 
-    COMMA           reduce using rule 34 (valor -> STRING_LITERAL .)
-    RPAREN          reduce using rule 34 (valor -> STRING_LITERAL .)
-    REQUIRED        reduce using rule 34 (valor -> STRING_LITERAL .)
-    UNIQUE          reduce using rule 34 (valor -> STRING_LITERAL .)
-    KEY             reduce using rule 34 (valor -> STRING_LITERAL .)
-    EXTERNAL        reduce using rule 34 (valor -> STRING_LITERAL .)
-    DEFAULT         reduce using rule 34 (valor -> STRING_LITERAL .)
-    IDENTIFIER      reduce using rule 34 (valor -> STRING_LITERAL .)
-    MODEL           reduce using rule 34 (valor -> STRING_LITERAL .)
-    $end            reduce using rule 34 (valor -> STRING_LITERAL .)
+    COMMA           reduce using rule 34 (expresion -> valor .)
+    RPAREN          reduce using rule 34 (expresion -> valor .)
 
 
 state 49
 
-    (35) valor -> NUMBER_INT .
+    (35) valor -> STRING_LITERAL .
 
-    COMMA           reduce using rule 35 (valor -> NUMBER_INT .)
-    RPAREN          reduce using rule 35 (valor -> NUMBER_INT .)
-    REQUIRED        reduce using rule 35 (valor -> NUMBER_INT .)
-    UNIQUE          reduce using rule 35 (valor -> NUMBER_INT .)
-    KEY             reduce using rule 35 (valor -> NUMBER_INT .)
-    EXTERNAL        reduce using rule 35 (valor -> NUMBER_INT .)
-    DEFAULT         reduce using rule 35 (valor -> NUMBER_INT .)
-    IDENTIFIER      reduce using rule 35 (valor -> NUMBER_INT .)
-    MODEL           reduce using rule 35 (valor -> NUMBER_INT .)
-    $end            reduce using rule 35 (valor -> NUMBER_INT .)
+    COMMA           reduce using rule 35 (valor -> STRING_LITERAL .)
+    RPAREN          reduce using rule 35 (valor -> STRING_LITERAL .)
+    REQUIRED        reduce using rule 35 (valor -> STRING_LITERAL .)
+    UNIQUE          reduce using rule 35 (valor -> STRING_LITERAL .)
+    KEY             reduce using rule 35 (valor -> STRING_LITERAL .)
+    EXTERNAL        reduce using rule 35 (valor -> STRING_LITERAL .)
+    DEFAULT         reduce using rule 35 (valor -> STRING_LITERAL .)
+    IDENTIFIER      reduce using rule 35 (valor -> STRING_LITERAL .)
+    MODEL           reduce using rule 35 (valor -> STRING_LITERAL .)
+    $end            reduce using rule 35 (valor -> STRING_LITERAL .)
 
 
 state 50
 
-    (36) valor -> NUMBER_DECIMAL .
+    (36) valor -> NUMBER_INT .
 
-    COMMA           reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    RPAREN          reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    REQUIRED        reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    UNIQUE          reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    KEY             reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    EXTERNAL        reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    DEFAULT         reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    IDENTIFIER      reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    MODEL           reduce using rule 36 (valor -> NUMBER_DECIMAL .)
-    $end            reduce using rule 36 (valor -> NUMBER_DECIMAL .)
+    COMMA           reduce using rule 36 (valor -> NUMBER_INT .)
+    RPAREN          reduce using rule 36 (valor -> NUMBER_INT .)
+    REQUIRED        reduce using rule 36 (valor -> NUMBER_INT .)
+    UNIQUE          reduce using rule 36 (valor -> NUMBER_INT .)
+    KEY             reduce using rule 36 (valor -> NUMBER_INT .)
+    EXTERNAL        reduce using rule 36 (valor -> NUMBER_INT .)
+    DEFAULT         reduce using rule 36 (valor -> NUMBER_INT .)
+    IDENTIFIER      reduce using rule 36 (valor -> NUMBER_INT .)
+    MODEL           reduce using rule 36 (valor -> NUMBER_INT .)
+    $end            reduce using rule 36 (valor -> NUMBER_INT .)
 
 
 state 51
 
-    (37) valor -> DATE_LITERAL .
+    (37) valor -> NUMBER_DECIMAL .
 
-    COMMA           reduce using rule 37 (valor -> DATE_LITERAL .)
-    RPAREN          reduce using rule 37 (valor -> DATE_LITERAL .)
-    REQUIRED        reduce using rule 37 (valor -> DATE_LITERAL .)
-    UNIQUE          reduce using rule 37 (valor -> DATE_LITERAL .)
-    KEY             reduce using rule 37 (valor -> DATE_LITERAL .)
-    EXTERNAL        reduce using rule 37 (valor -> DATE_LITERAL .)
-    DEFAULT         reduce using rule 37 (valor -> DATE_LITERAL .)
-    IDENTIFIER      reduce using rule 37 (valor -> DATE_LITERAL .)
-    MODEL           reduce using rule 37 (valor -> DATE_LITERAL .)
-    $end            reduce using rule 37 (valor -> DATE_LITERAL .)
+    COMMA           reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    RPAREN          reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    REQUIRED        reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    UNIQUE          reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    KEY             reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    EXTERNAL        reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    DEFAULT         reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    IDENTIFIER      reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    MODEL           reduce using rule 37 (valor -> NUMBER_DECIMAL .)
+    $end            reduce using rule 37 (valor -> NUMBER_DECIMAL .)
 
 
 state 52
 
-    (38) valor -> TRUE .
+    (38) valor -> DATE_LITERAL .
 
-    COMMA           reduce using rule 38 (valor -> TRUE .)
-    RPAREN          reduce using rule 38 (valor -> TRUE .)
-    REQUIRED        reduce using rule 38 (valor -> TRUE .)
-    UNIQUE          reduce using rule 38 (valor -> TRUE .)
-    KEY             reduce using rule 38 (valor -> TRUE .)
-    EXTERNAL        reduce using rule 38 (valor -> TRUE .)
-    DEFAULT         reduce using rule 38 (valor -> TRUE .)
-    IDENTIFIER      reduce using rule 38 (valor -> TRUE .)
-    MODEL           reduce using rule 38 (valor -> TRUE .)
-    $end            reduce using rule 38 (valor -> TRUE .)
+    COMMA           reduce using rule 38 (valor -> DATE_LITERAL .)
+    RPAREN          reduce using rule 38 (valor -> DATE_LITERAL .)
+    REQUIRED        reduce using rule 38 (valor -> DATE_LITERAL .)
+    UNIQUE          reduce using rule 38 (valor -> DATE_LITERAL .)
+    KEY             reduce using rule 38 (valor -> DATE_LITERAL .)
+    EXTERNAL        reduce using rule 38 (valor -> DATE_LITERAL .)
+    DEFAULT         reduce using rule 38 (valor -> DATE_LITERAL .)
+    IDENTIFIER      reduce using rule 38 (valor -> DATE_LITERAL .)
+    MODEL           reduce using rule 38 (valor -> DATE_LITERAL .)
+    $end            reduce using rule 38 (valor -> DATE_LITERAL .)
 
 
 state 53
 
-    (39) valor -> FALSE .
+    (39) valor -> TRUE .
 
-    COMMA           reduce using rule 39 (valor -> FALSE .)
-    RPAREN          reduce using rule 39 (valor -> FALSE .)
-    REQUIRED        reduce using rule 39 (valor -> FALSE .)
-    UNIQUE          reduce using rule 39 (valor -> FALSE .)
-    KEY             reduce using rule 39 (valor -> FALSE .)
-    EXTERNAL        reduce using rule 39 (valor -> FALSE .)
-    DEFAULT         reduce using rule 39 (valor -> FALSE .)
-    IDENTIFIER      reduce using rule 39 (valor -> FALSE .)
-    MODEL           reduce using rule 39 (valor -> FALSE .)
-    $end            reduce using rule 39 (valor -> FALSE .)
+    COMMA           reduce using rule 39 (valor -> TRUE .)
+    RPAREN          reduce using rule 39 (valor -> TRUE .)
+    REQUIRED        reduce using rule 39 (valor -> TRUE .)
+    UNIQUE          reduce using rule 39 (valor -> TRUE .)
+    KEY             reduce using rule 39 (valor -> TRUE .)
+    EXTERNAL        reduce using rule 39 (valor -> TRUE .)
+    DEFAULT         reduce using rule 39 (valor -> TRUE .)
+    IDENTIFIER      reduce using rule 39 (valor -> TRUE .)
+    MODEL           reduce using rule 39 (valor -> TRUE .)
+    $end            reduce using rule 39 (valor -> TRUE .)
 
 
 state 54
 
-    (40) valor -> EMPTY .
+    (40) valor -> FALSE .
 
-    COMMA           reduce using rule 40 (valor -> EMPTY .)
-    RPAREN          reduce using rule 40 (valor -> EMPTY .)
-    REQUIRED        reduce using rule 40 (valor -> EMPTY .)
-    UNIQUE          reduce using rule 40 (valor -> EMPTY .)
-    KEY             reduce using rule 40 (valor -> EMPTY .)
-    EXTERNAL        reduce using rule 40 (valor -> EMPTY .)
-    DEFAULT         reduce using rule 40 (valor -> EMPTY .)
-    IDENTIFIER      reduce using rule 40 (valor -> EMPTY .)
-    MODEL           reduce using rule 40 (valor -> EMPTY .)
-    $end            reduce using rule 40 (valor -> EMPTY .)
+    COMMA           reduce using rule 40 (valor -> FALSE .)
+    RPAREN          reduce using rule 40 (valor -> FALSE .)
+    REQUIRED        reduce using rule 40 (valor -> FALSE .)
+    UNIQUE          reduce using rule 40 (valor -> FALSE .)
+    KEY             reduce using rule 40 (valor -> FALSE .)
+    EXTERNAL        reduce using rule 40 (valor -> FALSE .)
+    DEFAULT         reduce using rule 40 (valor -> FALSE .)
+    IDENTIFIER      reduce using rule 40 (valor -> FALSE .)
+    MODEL           reduce using rule 40 (valor -> FALSE .)
+    $end            reduce using rule 40 (valor -> FALSE .)
 
 
 state 55
 
-    (30) lista_argumentos -> parametro COMMA lista_argumentos .
+    (41) valor -> EMPTY .
 
-    RPAREN          reduce using rule 30 (lista_argumentos -> parametro COMMA lista_argumentos .)
+    COMMA           reduce using rule 41 (valor -> EMPTY .)
+    RPAREN          reduce using rule 41 (valor -> EMPTY .)
+    REQUIRED        reduce using rule 41 (valor -> EMPTY .)
+    UNIQUE          reduce using rule 41 (valor -> EMPTY .)
+    KEY             reduce using rule 41 (valor -> EMPTY .)
+    EXTERNAL        reduce using rule 41 (valor -> EMPTY .)
+    DEFAULT         reduce using rule 41 (valor -> EMPTY .)
+    IDENTIFIER      reduce using rule 41 (valor -> EMPTY .)
+    MODEL           reduce using rule 41 (valor -> EMPTY .)
+    $end            reduce using rule 41 (valor -> EMPTY .)
 
 
 state 56
+
+    (31) lista_argumentos -> parametro COMMA lista_argumentos .
+
+    RPAREN          reduce using rule 31 (lista_argumentos -> parametro COMMA lista_argumentos .)
+
+
+state 57
 
     (15) restricciones_opt -> restriccion restricciones_opt .
 
@@ -842,37 +852,37 @@ state 56
     $end            reduce using rule 15 (restricciones_opt -> restriccion restricciones_opt .)
 
 
-state 57
+state 58
 
     (21) restriccion -> DEFAULT ASSIGN . valor
-    (34) valor -> . STRING_LITERAL
-    (35) valor -> . NUMBER_INT
-    (36) valor -> . NUMBER_DECIMAL
-    (37) valor -> . DATE_LITERAL
-    (38) valor -> . TRUE
-    (39) valor -> . FALSE
-    (40) valor -> . EMPTY
-    (41) valor -> . IDENTIFIER
+    (35) valor -> . STRING_LITERAL
+    (36) valor -> . NUMBER_INT
+    (37) valor -> . NUMBER_DECIMAL
+    (38) valor -> . DATE_LITERAL
+    (39) valor -> . TRUE
+    (40) valor -> . FALSE
+    (41) valor -> . EMPTY
+    (42) valor -> . IDENTIFIER
 
-    STRING_LITERAL  shift and go to state 48
-    NUMBER_INT      shift and go to state 49
-    NUMBER_DECIMAL  shift and go to state 50
-    DATE_LITERAL    shift and go to state 51
-    TRUE            shift and go to state 52
-    FALSE           shift and go to state 53
-    EMPTY           shift and go to state 54
-    IDENTIFIER      shift and go to state 45
+    STRING_LITERAL  shift and go to state 49
+    NUMBER_INT      shift and go to state 50
+    NUMBER_DECIMAL  shift and go to state 51
+    DATE_LITERAL    shift and go to state 52
+    TRUE            shift and go to state 53
+    FALSE           shift and go to state 54
+    EMPTY           shift and go to state 55
+    IDENTIFIER      shift and go to state 46
 
-    valor                          shift and go to state 59
+    valor                          shift and go to state 60
 
-state 58
+state 59
 
     (14) tipo_dato -> DECIMAL LPAREN NUMBER_INT . COMMA NUMBER_INT RPAREN
 
-    COMMA           shift and go to state 60
+    COMMA           shift and go to state 61
 
 
-state 59
+state 60
 
     (21) restriccion -> DEFAULT ASSIGN valor .
 
@@ -886,21 +896,21 @@ state 59
     $end            reduce using rule 21 (restriccion -> DEFAULT ASSIGN valor .)
 
 
-state 60
+state 61
 
     (14) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA . NUMBER_INT RPAREN
 
-    NUMBER_INT      shift and go to state 61
-
-
-state 61
-
-    (14) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT . RPAREN
-
-    RPAREN          shift and go to state 62
+    NUMBER_INT      shift and go to state 62
 
 
 state 62
+
+    (14) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT . RPAREN
+
+    RPAREN          shift and go to state 63
+
+
+state 63
 
     (14) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .
 
@@ -916,4 +926,4 @@ state 62
 WARNING: 
 WARNING: Conflicts:
 WARNING: 
-WARNING: shift/reduce conflict for IDENTIFIER in state 19 resolved as shift
+WARNING: shift/reduce conflict for IDENTIFIER in state 20 resolved as shift

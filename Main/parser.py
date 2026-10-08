@@ -1,12 +1,13 @@
 import ply.yacc as yacc
-# Importamos la lista de tokens y el analizador léxico de lexer.py
 from lexer import tokens, lexer
 
-# Lista global de errores sintácticos
+# Pila / Lista global de errores sintácticos
 errores_sintacticos = []
 
-
+# =====================================================================
 # REGLAS SINTÁCTICAS (Gramática GBD adaptada a tokens de lexer.py)
+# =====================================================================
+
 # <programa> -> <sentencia> <programa> | <sentencia>
 def p_programa_multiple(p):
     '''programa : sentencia programa'''
@@ -105,11 +106,12 @@ def p_operacion_db(p):
 
 def p_metodo(p):
     '''
-    metodo : NEW
-           | FIND
+    metodo : FIND
+           | NEW
            | MODIFY
            | REMOVE
            | ADD
+           | IDENTIFIER
     '''
     p[0] = p[1]
 
@@ -159,8 +161,8 @@ def p_valor(p):
 # =====================================================================
 def p_error(p):
     if p:
-        # Extrae posición, línea y valor del token problemático
-        col = (p.lexpos - p.lexer.lexdata.rfind('\n', 0, p.lexpos)) if p.lexpos else 1
+        linea_inicio = p.lexer.lexdata.rfind('\n', 0, p.lexpos)
+        col = (p.lexpos - linea_inicio) if linea_inicio >= 0 else p.lexpos + 1
         msg = f"[!] Error Sintáctico: Token inesperado '{p.value}' (Tipo: {p.type}) en Línea {p.lineno}, Columna {col}."
         errores_sintacticos.append(msg)
         print(msg)
