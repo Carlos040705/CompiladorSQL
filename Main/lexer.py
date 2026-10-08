@@ -124,7 +124,6 @@ def t_IDENTIFIER(t):
 def t_newline(t):
     r'\n+'
     t.lexer.lineno += len(t.value)
-    
 
 def t_error(t):
     col = find_column(t.lexer.lexdata, t)
@@ -134,17 +133,24 @@ def t_error(t):
 lexer = lex.lex()
 
 if __name__ == "__main__":
-    cad =''
-''' with open(file=r'C:\Users\varga\OneDrive\Desktop\CompiladorSQL\Main\Prueba.txt', encoding='UTF-8', mode='r') as f:
-        cad += f.read()
+    cad = ''
+    ruta_entrada = "C:/Users/angel/OneDrive/Documentos/Escuela/6to Semestre/Compiladores/Materiales/Prueba.txt"
+    ruta_salida = "C:/Users/angel/OneDrive/Documentos/Escuela/6to Semestre/Compiladores/Materiales/resultado.txt"
+    
+    try:
+        with open(file=ruta_entrada, encoding='UTF-8', mode='r') as f:
+            cad += f.read()
 
-    codigo_prueba = cad
-    lexer.input(codigo_prueba)
-    with open(file=r'C:\Users\varga\OneDrive\Desktop\CompiladorSQL\Main\resultado.txt', encoding='UTF-8', mode='w') as f:
-        while True:
-            tok = lexer.token()
-            if not tok:
-                break
-            print(f"Token(tipo='{tok.type}', valor='{tok.value}', linea={tok.lineno}, columna={tok.lexpos})")
-            f.write(f"<'{tok.type}','{tok.value}','{tok.lineno}','{tok.lexpos}'>\n")
-'''
+        codigo_prueba = cad
+        lexer.input(codigo_prueba)
+        
+        with open(file=ruta_salida, encoding='UTF-8', mode='w') as f:
+            while True:
+                tok = lexer.token()
+                if not tok:
+                    break
+                col = find_column(codigo_prueba, tok)
+                print(f"Token(tipo='{tok.type}', valor='{tok.value}', linea={tok.lineno}, columna={col})")
+                f.write(f"<'{tok.type}','{tok.value}','{tok.lineno}','{col}'>\n")
+    except FileNotFoundError:
+        print("Error: No se encontró el archivo en la ruta especificada.")
