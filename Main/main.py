@@ -1,10 +1,14 @@
-import psycopg2;
-import sys;
-import ast;
 from lexer import lexer
 from parser import parser, errores_sintacticos
+from visitor import ASTPrinter
 
-codigo_prueba = "Estudiante.find(edad = 67)"
+ruta_entrada = "C:/Users/varga/OneDrive/Desktop/CompiladorSQL/Prueba.txt" 
+cad = ''
+with open(ruta_entrada, encoding= "UTF-8", mode= 'r') as f:
+    cad += f.read()
+    
+
+codigo_prueba = cad
 
 # Ejecución del parser pasando el código y el lexer
 ast_resultado = parser.parse(codigo_prueba, lexer=lexer)
@@ -17,5 +21,7 @@ if errores_sintacticos:
 else:
     print("¡ANÁLISIS SINTÁCTICO EXITOSO!")
     print("ÁRBOLES SINTÁCTICOS / ESTRUCTURA RESULTANTE (AST):")
-    print(ast_resultado)
+    if ast_resultado:
+        printer = ASTPrinter()
+        printer.visit(ast_resultado)
 print("="*50)

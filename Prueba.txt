@@ -1,0 +1,7 @@
+model estudiante:
+	nombre: string
+	matricula: auto
+	edad: num
+	peso: decimal(10,5)
+
+estudiante.find(nombre = "Jose Cruz Castillo")

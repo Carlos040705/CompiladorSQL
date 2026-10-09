@@ -6,9 +6,9 @@ _tabversion = '3.10'
 
 _lr_method = 'LALR'
 
-_lr_signature = 'ADD ALIAS AND ASSIGN AUTO BOOL CHANGE COLON COMMA COUNT DATE_LITERAL DECIMAL DEFAULT DIVIDE DOT DOWN EMPTY EQUAL ERASE EXTERNAL FALSE FIND GREATER GREATER_EQUAL GROUP IDENTIFIER IF IFGROUP IN KEY LESS LESS_EQUAL LINK LPAREN MAIN MINUS MODEL MODIFY MODULO NEW NOT NOT_EQUAL NUM NUMBER_DECIMAL NUMBER_INT OR PLUS RANGE REMOVE REQUIRED RPAREN SIMILAR SKIP STRING STRING_LITERAL TAKE TEXT TIMES TRUE UNIQUE UP VALIDATEprograma : sentencia programaprograma : sentencia\nsentencia : declaracion_modelo\n          | operacion_db\ndeclaracion_modelo : MODEL IDENTIFIER COLON lista_camposlista_campos : campo lista_camposlista_campos : campocampo : IDENTIFIER COLON tipo_dato restricciones_opt\ntipo_dato : STRING\n          | AUTO\n          | NUM\n          | TEXT\n          | BOOL\ntipo_dato : DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPARENrestricciones_opt : restriccion restricciones_optrestricciones_opt : \nrestriccion : REQUIRED\n            | UNIQUE\n            | KEY\n            | EXTERNAL\nrestriccion : DEFAULT ASSIGN valoroperacion_db : IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN\nmetodo : FIND\n       | NEW\n       | MODIFY\n       | REMOVE\n       | ADD\n       | IDENTIFIER\nargumentos_opt : lista_argumentosargumentos_opt : lista_argumentos : parametro COMMA lista_argumentoslista_argumentos : parametroparametro : IDENTIFIER ASSIGN expresionexpresion : valor\nvalor : STRING_LITERAL\n      | NUMBER_INT\n      | NUMBER_DECIMAL\n      | DATE_LITERAL\n      | TRUE\n      | FALSE\n      | EMPTY\n      | IDENTIFIER\n'
+_lr_signature = 'ADD ALIAS AND ASSIGN AUTO AVG BOOL CHANGE COLON COMMA COUNT DATE_LITERAL DECIMAL DEDENT DEFAULT DIVIDE DOT DOWN EMPTY ERASE EXTERNAL FALSE FIND GREATER GREATER_EQUAL GROUP IDENTIFIER IF IFGROUP IN INDENT KEY LESS LESS_EQUAL LINK LPAREN MAIN MAX MIN MINUS MODEL MODIFY MODULO NEW NOT NOT_EQUAL NUM NUMBER_DECIMAL NUMBER_INT OR PLUS RANGE REMOVE REQUIRED RPAREN SALTO_LINEA SIMILAR SKIP STRING STRING_LITERAL SUM TAKE TEXT TIMES TRUE UNIQUE UP VALIDATEstart : programaprograma : sentencia programaprograma : sentencia\nsentencia : declaracion_modelo\n          | operacion_db\n          | SALTO_LINEA\ndeclaracion_modelo : MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT\nlista_campos : campo SALTO_LINEA lista_campos\n             | SALTO_LINEA lista_campos\n\nlista_campos : campo SALTO_LINEA\n             | campo\n             | SALTO_LINEA\ncampo : IDENTIFIER COLON tipo_dato restricciones_opt\ntipo_dato : STRING\n          | AUTO\n          | NUM\n          | TEXT\n          | BOOL\ntipo_dato : DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPARENrestricciones_opt : restriccion restricciones_optrestricciones_opt : \nrestriccion : REQUIRED\n            | UNIQUE\n            | MAIN KEY\n            | EXTERNAL KEY\nrestriccion : DEFAULT ASSIGN valoroperacion_db : IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN\nmetodo : FIND\n       | NEW\n       | MODIFY\n       | REMOVE\n       | ADD\n       | COUNT\n       | SUM\n       | AVG\n       | MAX\n       | MIN\n       | IDENTIFIER\nargumentos_opt : lista_argumentosargumentos_opt : lista_argumentos : parametro COMMA lista_argumentoslista_argumentos : parametroparametro : IDENTIFIER ASSIGN expresionexpresion : valor\nvalor : STRING_LITERAL\n      | NUMBER_INT\n      | NUMBER_DECIMAL\n      | DATE_LITERAL\n      | TRUE\n      | FALSE\n      | EMPTY\nvalor : IDENTIFIER'
     
-_lr_action_items = {'MODEL':([0,2,3,4,19,20,23,28,29,30,31,32,33,36,38,39,40,41,42,43,46,49,50,51,52,53,54,55,57,60,63,],[5,5,-3,-4,-5,-7,-6,-16,-9,-10,-11,-12,-13,-22,-8,-16,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-15,-21,-14,]),'IDENTIFIER':([0,2,3,4,5,9,10,19,20,21,23,28,29,30,31,32,33,35,36,37,38,39,40,41,42,43,46,49,50,51,52,53,54,55,57,58,60,63,],[6,6,-3,-4,8,11,18,-5,18,24,-6,-16,-9,-10,-11,-12,-13,46,-22,24,-8,-16,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-15,46,-21,-14,]),'$end':([1,2,3,4,7,19,20,23,28,29,30,31,32,33,36,38,39,40,41,42,43,46,49,50,51,52,53,54,55,57,60,63,],[0,-2,-3,-4,-1,-5,-7,-6,-16,-9,-10,-11,-12,-13,-22,-8,-16,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-15,-21,-14,]),'DOT':([6,],[9,]),'COLON':([8,18,],[10,22,]),'FIND':([9,],[13,]),'NEW':([9,],[14,]),'MODIFY':([9,],[15,]),'REMOVE':([9,],[16,]),'ADD':([9,],[17,]),'LPAREN':([11,12,13,14,15,16,17,34,],[-28,21,-23,-24,-25,-26,-27,45,]),'RPAREN':([21,25,26,27,46,47,48,49,50,51,52,53,54,55,56,62,],[-30,36,-29,-32,-42,-33,-34,-35,-36,-37,-38,-39,-40,-41,-31,63,]),'STRING':([22,],[29,]),'AUTO':([22,],[30,]),'NUM':([22,],[31,]),'TEXT':([22,],[32,]),'BOOL':([22,],[33,]),'DECIMAL':([22,],[34,]),'ASSIGN':([24,44,],[35,58,]),'COMMA':([27,46,47,48,49,50,51,52,53,54,55,59,],[37,-42,-33,-34,-35,-36,-37,-38,-39,-40,-41,61,]),'REQUIRED':([28,29,30,31,32,33,39,40,41,42,43,46,49,50,51,52,53,54,55,60,63,],[40,-9,-10,-11,-12,-13,40,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-21,-14,]),'UNIQUE':([28,29,30,31,32,33,39,40,41,42,43,46,49,50,51,52,53,54,55,60,63,],[41,-9,-10,-11,-12,-13,41,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-21,-14,]),'KEY':([28,29,30,31,32,33,39,40,41,42,43,46,49,50,51,52,53,54,55,60,63,],[42,-9,-10,-11,-12,-13,42,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-21,-14,]),'EXTERNAL':([28,29,30,31,32,33,39,40,41,42,43,46,49,50,51,52,53,54,55,60,63,],[43,-9,-10,-11,-12,-13,43,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-21,-14,]),'DEFAULT':([28,29,30,31,32,33,39,40,41,42,43,46,49,50,51,52,53,54,55,60,63,],[44,-9,-10,-11,-12,-13,44,-17,-18,-19,-20,-42,-35,-36,-37,-38,-39,-40,-41,-21,-14,]),'STRING_LITERAL':([35,58,],[49,49,]),'NUMBER_INT':([35,45,58,61,],[50,59,50,62,]),'NUMBER_DECIMAL':([35,58,],[51,51,]),'DATE_LITERAL':([35,58,],[52,52,]),'TRUE':([35,58,],[53,53,]),'FALSE':([35,58,],[54,54,]),'EMPTY':([35,58,],[55,55,]),}
+_lr_action_items = {'SALTO_LINEA':([0,3,4,5,6,12,27,33,35,37,41,42,43,46,47,48,49,50,51,52,54,55,56,57,58,59,62,63,64,65,70,71,72,75,78,],[6,6,-4,-5,-6,25,33,33,42,-27,-7,33,-52,-45,-46,-47,-48,-49,-50,-51,-21,-14,-15,-16,-17,-18,-13,-21,-22,-23,-20,-24,-25,-26,-19,]),'MODEL':([0,3,4,5,6,37,41,],[7,7,-4,-5,-6,-27,-7,]),'IDENTIFIER':([0,3,4,5,6,7,11,26,27,33,36,37,38,41,42,73,],[8,8,-4,-5,-6,10,13,28,32,32,43,-27,28,-7,32,43,]),'$end':([1,2,3,4,5,6,9,37,41,],[0,-1,-3,-4,-5,-6,-2,-27,-7,]),'DOT':([8,],[11,]),'COLON':([10,32,],[12,39,]),'FIND':([11,],[15,]),'NEW':([11,],[16,]),'MODIFY':([11,],[17,]),'REMOVE':([11,],[18,]),'ADD':([11,],[19,]),'COUNT':([11,],[20,]),'SUM':([11,],[21,]),'AVG':([11,],[22,]),'MAX':([11,],[23,]),'MIN':([11,],[24,]),'LPAREN':([13,14,15,16,17,18,19,20,21,22,23,24,60,],[-38,26,-28,-29,-30,-31,-32,-33,-34,-35,-36,-37,69,]),'INDENT':([25,],[27,]),'RPAREN':([26,29,30,31,43,44,45,46,47,48,49,50,51,52,53,77,],[-40,37,-39,-42,-52,-43,-44,-45,-46,-47,-48,-49,-50,-51,-41,78,]),'ASSIGN':([28,68,],[36,73,]),'COMMA':([31,43,44,45,46,47,48,49,50,51,52,74,],[38,-52,-43,-44,-45,-46,-47,-48,-49,-50,-51,76,]),'DEDENT':([33,34,35,40,42,43,46,47,48,49,50,51,52,54,55,56,57,58,59,61,62,63,64,65,70,71,72,75,78,],[-12,41,-11,-9,-10,-52,-45,-46,-47,-48,-49,-50,-51,-21,-14,-15,-16,-17,-18,-8,-13,-21,-22,-23,-20,-24,-25,-26,-19,]),'STRING_LITERAL':([36,73,],[46,46,]),'NUMBER_INT':([36,69,73,76,],[47,74,47,77,]),'NUMBER_DECIMAL':([36,73,],[48,48,]),'DATE_LITERAL':([36,73,],[49,49,]),'TRUE':([36,73,],[50,50,]),'FALSE':([36,73,],[51,51,]),'EMPTY':([36,73,],[52,52,]),'STRING':([39,],[55,]),'AUTO':([39,],[56,]),'NUM':([39,],[57,]),'TEXT':([39,],[58,]),'BOOL':([39,],[59,]),'DECIMAL':([39,],[60,]),'REQUIRED':([43,46,47,48,49,50,51,52,54,55,56,57,58,59,63,64,65,71,72,75,78,],[-52,-45,-46,-47,-48,-49,-50,-51,64,-14,-15,-16,-17,-18,64,-22,-23,-24,-25,-26,-19,]),'UNIQUE':([43,46,47,48,49,50,51,52,54,55,56,57,58,59,63,64,65,71,72,75,78,],[-52,-45,-46,-47,-48,-49,-50,-51,65,-14,-15,-16,-17,-18,65,-22,-23,-24,-25,-26,-19,]),'MAIN':([43,46,47,48,49,50,51,52,54,55,56,57,58,59,63,64,65,71,72,75,78,],[-52,-45,-46,-47,-48,-49,-50,-51,66,-14,-15,-16,-17,-18,66,-22,-23,-24,-25,-26,-19,]),'EXTERNAL':([43,46,47,48,49,50,51,52,54,55,56,57,58,59,63,64,65,71,72,75,78,],[-52,-45,-46,-47,-48,-49,-50,-51,67,-14,-15,-16,-17,-18,67,-22,-23,-24,-25,-26,-19,]),'DEFAULT':([43,46,47,48,49,50,51,52,54,55,56,57,58,59,63,64,65,71,72,75,78,],[-52,-45,-46,-47,-48,-49,-50,-51,68,-14,-15,-16,-17,-18,68,-22,-23,-24,-25,-26,-19,]),'KEY':([66,67,],[71,72,]),}
 
 _lr_action = {}
 for _k, _v in _lr_action_items.items():
@@ -17,7 +17,7 @@ for _k, _v in _lr_action_items.items():
       _lr_action[_x][_k] = _y
 del _lr_action_items
 
-_lr_goto_items = {'programa':([0,2,],[1,7,]),'sentencia':([0,2,],[2,2,]),'declaracion_modelo':([0,2,],[3,3,]),'operacion_db':([0,2,],[4,4,]),'metodo':([9,],[12,]),'lista_campos':([10,20,],[19,23,]),'campo':([10,20,],[20,20,]),'argumentos_opt':([21,],[25,]),'lista_argumentos':([21,37,],[26,56,]),'parametro':([21,37,],[27,27,]),'tipo_dato':([22,],[28,]),'restricciones_opt':([28,39,],[38,57,]),'restriccion':([28,39,],[39,39,]),'expresion':([35,],[47,]),'valor':([35,58,],[48,60,]),}
+_lr_goto_items = {'start':([0,],[1,]),'programa':([0,3,],[2,9,]),'sentencia':([0,3,],[3,3,]),'declaracion_modelo':([0,3,],[4,4,]),'operacion_db':([0,3,],[5,5,]),'metodo':([11,],[14,]),'argumentos_opt':([26,],[29,]),'lista_argumentos':([26,38,],[30,53,]),'parametro':([26,38,],[31,31,]),'lista_campos':([27,33,42,],[34,40,61,]),'campo':([27,33,42,],[35,35,35,]),'expresion':([36,],[44,]),'valor':([36,73,],[45,75,]),'tipo_dato':([39,],[54,]),'restricciones_opt':([54,63,],[62,70,]),'restriccion':([54,63,],[63,63,]),}
 
 _lr_goto = {}
 for _k, _v in _lr_goto_items.items():
@@ -26,47 +26,57 @@ for _k, _v in _lr_goto_items.items():
        _lr_goto[_x][_k] = _y
 del _lr_goto_items
 _lr_productions = [
-  ("S' -> programa","S'",1,None,None,None),
-  ('programa -> sentencia programa','programa',2,'p_programa_multiple','parser.py',13),
-  ('programa -> sentencia','programa',1,'p_programa_simple','parser.py',17),
-  ('sentencia -> declaracion_modelo','sentencia',1,'p_sentencia','parser.py',23),
-  ('sentencia -> operacion_db','sentencia',1,'p_sentencia','parser.py',24),
-  ('declaracion_modelo -> MODEL IDENTIFIER COLON lista_campos','declaracion_modelo',4,'p_declaracion_modelo','parser.py',33),
-  ('lista_campos -> campo lista_campos','lista_campos',2,'p_lista_campos_multiple','parser.py',41),
-  ('lista_campos -> campo','lista_campos',1,'p_lista_campos_simple','parser.py',45),
-  ('campo -> IDENTIFIER COLON tipo_dato restricciones_opt','campo',4,'p_campo','parser.py',50),
-  ('tipo_dato -> STRING','tipo_dato',1,'p_tipo_dato_simple','parser.py',60),
-  ('tipo_dato -> AUTO','tipo_dato',1,'p_tipo_dato_simple','parser.py',61),
-  ('tipo_dato -> NUM','tipo_dato',1,'p_tipo_dato_simple','parser.py',62),
-  ('tipo_dato -> TEXT','tipo_dato',1,'p_tipo_dato_simple','parser.py',63),
-  ('tipo_dato -> BOOL','tipo_dato',1,'p_tipo_dato_simple','parser.py',64),
-  ('tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN','tipo_dato',6,'p_tipo_dato_decimal','parser.py',69),
-  ('restricciones_opt -> restriccion restricciones_opt','restricciones_opt',2,'p_restricciones_opt_multiple','parser.py',74),
-  ('restricciones_opt -> <empty>','restricciones_opt',0,'p_restricciones_opt_vacia','parser.py',78),
-  ('restriccion -> REQUIRED','restriccion',1,'p_restriccion','parser.py',83),
-  ('restriccion -> UNIQUE','restriccion',1,'p_restriccion','parser.py',84),
-  ('restriccion -> KEY','restriccion',1,'p_restriccion','parser.py',85),
-  ('restriccion -> EXTERNAL','restriccion',1,'p_restriccion','parser.py',86),
-  ('restriccion -> DEFAULT ASSIGN valor','restriccion',3,'p_restriccion_default','parser.py',91),
-  ('operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN','operacion_db',6,'p_operacion_db','parser.py',99),
-  ('metodo -> FIND','metodo',1,'p_metodo','parser.py',109),
-  ('metodo -> NEW','metodo',1,'p_metodo','parser.py',110),
-  ('metodo -> MODIFY','metodo',1,'p_metodo','parser.py',111),
-  ('metodo -> REMOVE','metodo',1,'p_metodo','parser.py',112),
-  ('metodo -> ADD','metodo',1,'p_metodo','parser.py',113),
-  ('metodo -> IDENTIFIER','metodo',1,'p_metodo','parser.py',114),
-  ('argumentos_opt -> lista_argumentos','argumentos_opt',1,'p_argumentos_opt','parser.py',119),
-  ('argumentos_opt -> <empty>','argumentos_opt',0,'p_argumentos_opt_vacia','parser.py',123),
-  ('lista_argumentos -> parametro COMMA lista_argumentos','lista_argumentos',3,'p_lista_argumentos_multiple','parser.py',127),
-  ('lista_argumentos -> parametro','lista_argumentos',1,'p_lista_argumentos_simple','parser.py',131),
-  ('parametro -> IDENTIFIER ASSIGN expresion','parametro',3,'p_parametro','parser.py',136),
-  ('expresion -> valor','expresion',1,'p_expresion','parser.py',143),
-  ('valor -> STRING_LITERAL','valor',1,'p_valor','parser.py',148),
-  ('valor -> NUMBER_INT','valor',1,'p_valor','parser.py',149),
-  ('valor -> NUMBER_DECIMAL','valor',1,'p_valor','parser.py',150),
-  ('valor -> DATE_LITERAL','valor',1,'p_valor','parser.py',151),
-  ('valor -> TRUE','valor',1,'p_valor','parser.py',152),
-  ('valor -> FALSE','valor',1,'p_valor','parser.py',153),
-  ('valor -> EMPTY','valor',1,'p_valor','parser.py',154),
-  ('valor -> IDENTIFIER','valor',1,'p_valor','parser.py',155),
+  ("S' -> start","S'",1,None,None,None),
+  ('start -> programa','start',1,'p_start','parser.py',13),
+  ('programa -> sentencia programa','programa',2,'p_programa_multiple','parser.py',18),
+  ('programa -> sentencia','programa',1,'p_programa_simple','parser.py',25),
+  ('sentencia -> declaracion_modelo','sentencia',1,'p_sentencia','parser.py',34),
+  ('sentencia -> operacion_db','sentencia',1,'p_sentencia','parser.py',35),
+  ('sentencia -> SALTO_LINEA','sentencia',1,'p_sentencia','parser.py',36),
+  ('declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT','declaracion_modelo',7,'p_declaracion_modelo','parser.py',45),
+  ('lista_campos -> campo SALTO_LINEA lista_campos','lista_campos',3,'p_lista_campos_multiple','parser.py',52),
+  ('lista_campos -> SALTO_LINEA lista_campos','lista_campos',2,'p_lista_campos_multiple','parser.py',53),
+  ('lista_campos -> campo SALTO_LINEA','lista_campos',2,'p_lista_campos_simple','parser.py',62),
+  ('lista_campos -> campo','lista_campos',1,'p_lista_campos_simple','parser.py',63),
+  ('lista_campos -> SALTO_LINEA','lista_campos',1,'p_lista_campos_simple','parser.py',64),
+  ('campo -> IDENTIFIER COLON tipo_dato restricciones_opt','campo',4,'p_campo','parser.py',73),
+  ('tipo_dato -> STRING','tipo_dato',1,'p_tipo_dato_simple','parser.py',79),
+  ('tipo_dato -> AUTO','tipo_dato',1,'p_tipo_dato_simple','parser.py',80),
+  ('tipo_dato -> NUM','tipo_dato',1,'p_tipo_dato_simple','parser.py',81),
+  ('tipo_dato -> TEXT','tipo_dato',1,'p_tipo_dato_simple','parser.py',82),
+  ('tipo_dato -> BOOL','tipo_dato',1,'p_tipo_dato_simple','parser.py',83),
+  ('tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN','tipo_dato',6,'p_tipo_dato_decimal','parser.py',88),
+  ('restricciones_opt -> restriccion restricciones_opt','restricciones_opt',2,'p_restricciones_opt_multiple','parser.py',93),
+  ('restricciones_opt -> <empty>','restricciones_opt',0,'p_restricciones_opt_vacia','parser.py',97),
+  ('restriccion -> REQUIRED','restriccion',1,'p_restriccion','parser.py',102),
+  ('restriccion -> UNIQUE','restriccion',1,'p_restriccion','parser.py',103),
+  ('restriccion -> MAIN KEY','restriccion',2,'p_restriccion','parser.py',104),
+  ('restriccion -> EXTERNAL KEY','restriccion',2,'p_restriccion','parser.py',105),
+  ('restriccion -> DEFAULT ASSIGN valor','restriccion',3,'p_restriccion_default','parser.py',113),
+  ('operacion_db -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN','operacion_db',6,'p_operacion_db','parser.py',121),
+  ('metodo -> FIND','metodo',1,'p_metodo','parser.py',126),
+  ('metodo -> NEW','metodo',1,'p_metodo','parser.py',127),
+  ('metodo -> MODIFY','metodo',1,'p_metodo','parser.py',128),
+  ('metodo -> REMOVE','metodo',1,'p_metodo','parser.py',129),
+  ('metodo -> ADD','metodo',1,'p_metodo','parser.py',130),
+  ('metodo -> COUNT','metodo',1,'p_metodo','parser.py',131),
+  ('metodo -> SUM','metodo',1,'p_metodo','parser.py',132),
+  ('metodo -> AVG','metodo',1,'p_metodo','parser.py',133),
+  ('metodo -> MAX','metodo',1,'p_metodo','parser.py',134),
+  ('metodo -> MIN','metodo',1,'p_metodo','parser.py',135),
+  ('metodo -> IDENTIFIER','metodo',1,'p_metodo','parser.py',136),
+  ('argumentos_opt -> lista_argumentos','argumentos_opt',1,'p_argumentos_opt','parser.py',141),
+  ('argumentos_opt -> <empty>','argumentos_opt',0,'p_argumentos_opt_vacia','parser.py',145),
+  ('lista_argumentos -> parametro COMMA lista_argumentos','lista_argumentos',3,'p_lista_argumentos_multiple','parser.py',149),
+  ('lista_argumentos -> parametro','lista_argumentos',1,'p_lista_argumentos_simple','parser.py',153),
+  ('parametro -> IDENTIFIER ASSIGN expresion','parametro',3,'p_parametro','parser.py',158),
+  ('expresion -> valor','expresion',1,'p_expresion','parser.py',162),
+  ('valor -> STRING_LITERAL','valor',1,'p_valor','parser.py',167),
+  ('valor -> NUMBER_INT','valor',1,'p_valor','parser.py',168),
+  ('valor -> NUMBER_DECIMAL','valor',1,'p_valor','parser.py',169),
+  ('valor -> DATE_LITERAL','valor',1,'p_valor','parser.py',170),
+  ('valor -> TRUE','valor',1,'p_valor','parser.py',171),
+  ('valor -> FALSE','valor',1,'p_valor','parser.py',172),
+  ('valor -> EMPTY','valor',1,'p_valor','parser.py',173),
+  ('valor -> IDENTIFIER','valor',1,'p_valor_identifier','parser.py',178),
 ]
