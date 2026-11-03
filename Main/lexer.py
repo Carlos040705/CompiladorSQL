@@ -211,7 +211,7 @@ lexer.token = token_wrapper
 
 if __name__ == "__main__":
     cad = ''
-    ruta_entrada = "C:/Users/varga/Downloads/Prueba.txt"
+    ruta_entrada = "C:/Users/varga/OneDrive/Desktop/CompiladorSQL/Prueba.txt"
     ruta_salida = "C:/Users/varga/Downloads/resultado.txt"
     
     try:

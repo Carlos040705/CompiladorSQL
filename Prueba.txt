@@ -1,7 +1,19 @@
+
+//Este es un comentario de una línea
 model estudiante:
-	nombre: string
+
+	nombre: string unique
 	matricula: auto
 	edad: num
 	peso: decimal(10,5)
 
+/*
+Esto es un comentario de varias lineas
+
+estudiante.find(nombre = "Jose Cruz Castillo")*/
+
+estudiante.find(nombre = "Jose Cruz Castillo")
+estudiante.modify(nombre = "Jose Cruz Castillo")
+estudiante.remove(nombre = "Jose Cruz Castillo")
+estudiante.find(nombre = "Jose Cruz Castillo")
 estudiante.find(nombre = "Jose Cruz Castillo")

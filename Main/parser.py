@@ -2,13 +2,11 @@ import ply.yacc as yacc
 from lexer import tokens, lexer
 from ast_nodes import Program, ModelDeclaration, Field, DataType, Constraint, DbOperation, Parameter, Literal, Identifier
 
-# Pila / Lista global de errores sintácticos
+# pila de errores
 errores_sintacticos = []
 
-# =====================================================================
-# REGLAS SINTÁCTICAS (Gramática GBD adaptada a tokens de lexer.py)
-# =====================================================================
 
+#gramática 
 def p_start(p):
     '''start : programa'''
     p[0] = Program(p[1])
@@ -37,13 +35,9 @@ def p_sentencia(p):
     '''
     p[0] = p[1]
 
-# ---------------------------------------------------------------------
-# Declaración de Modelos (Creación de Tablas)
-# <declaracion_modelo> -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT
-# ---------------------------------------------------------------------
 def p_declaracion_modelo(p):
     '''declaracion_modelo : MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT'''
-    # Filtramos valores nulos en lista_campos por si hubieron líneas en blanco
+    # se filtran líneas en blanco
     campos_validos = [c for c in p[6] if c is not None]
     p[0] = ModelDeclaration(p[2], campos_validos)
 
@@ -113,10 +107,6 @@ def p_restriccion_default(p):
     '''restriccion : DEFAULT ASSIGN valor'''
     p[0] = Constraint('DEFAULT', p[3])
 
-# ---------------------------------------------------------------------
-# Operaciones de Base de Datos (Consultas, Inserciones, etc.)
-# <operacion_db> -> IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN
-# ---------------------------------------------------------------------
 def p_operacion_db(p):
     '''operacion_db : IDENTIFIER DOT metodo LPAREN argumentos_opt RPAREN'''
     p[0] = DbOperation(p[1], p[3], p[5])
@@ -178,9 +168,7 @@ def p_valor_identifier(p):
     '''valor : IDENTIFIER'''
     p[0] = Identifier(p[1])
 
-# =====================================================================
-# MANEJO DE ERRORES SINTÁCTICOS (Modo Pánico)
-# =====================================================================
+#manejo de errores
 def p_error(p):
     if p:
         linea_inicio = p.lexer.lexdata.rfind('\n', 0, p.lexpos)
@@ -194,5 +182,5 @@ def p_error(p):
         errores_sintacticos.append(msg)
         print(msg)
 
-# Construcción del analizador sintáctico
+
 parser = yacc.yacc()
