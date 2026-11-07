@@ -51,7 +51,14 @@ class ASTPrinter(Visitor):
         self.print_indent(f"Constraint(type={node.constraint_type}{val_str})")
 
     def visit_DbOperation(self, node):
-        self.print_indent(f"DbOperation(model={node.model_name}, method={node.method}):")
+        self.print_indent(f"DbOperation(model={node.model_name}):")
+        self.indent_level += 1
+        for call in node.calls:
+            self.visit(call)
+        self.indent_level -= 1
+
+    def visit_MethodCall(self, node):
+        self.print_indent(f"MethodCall(method={node.method}):")
         if node.arguments:
             self.indent_level += 1
             for arg in node.arguments:

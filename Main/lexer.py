@@ -78,12 +78,12 @@ t_MINUS = r'-'
 t_TIMES = r'\*'
 t_DIVIDE = r'/'
 t_MODULO = r'%'
-t_ASSIGN = r'='
 t_NOT_EQUAL = r'!='
-t_LESS = r'<'
-t_GREATER = r'>'
 t_LESS_EQUAL = r'<='
 t_GREATER_EQUAL = r'>='
+t_ASSIGN = r'='
+t_LESS = r'<'
+t_GREATER = r'>'
 
 t_DOT = r'\.'
 t_COLON = r':'
@@ -91,7 +91,7 @@ t_COMMA = r','
 t_LPAREN = r'\('
 t_RPAREN = r'\)'
 
-t_ignore = ' \t'
+t_ignore = ' \t\r'
 
 def t_MULTILINE_COMMENT(t):
     r'/\*(.|\n)*?\*/'
@@ -130,11 +130,11 @@ def t_STRING_LITERAL(t):
 
 def t_IDENTIFIER(t):
     r'[a-zA-Z][a-zA-Z0-9_]*'
-    t.type = reserved.get(t.value, 'IDENTIFIER')
+    t.type = reserved.get(t.value.lower(), 'IDENTIFIER')
     return t
 
 def t_SALTO_LINEA(t):
-    r'\n+[ \t]*'
+    r'([ \t\r]*\n)+[ \t]*'
     t.lexer.lineno += t.value.count('\n')
     
     last_newline_idx = t.value.rfind('\n')
@@ -185,6 +185,7 @@ lexer._original_input = lexer.input
 def input_wrapper(data):
     lexer.indents = [0]
     lexer.token_queue = []
+    lexer.lineno = 1
     lexer._original_input(data)
 lexer.input = input_wrapper
 

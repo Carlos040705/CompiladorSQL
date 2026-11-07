@@ -1,0 +1,109 @@
+// =========================================================================
+// ARCHIVO DE PRUEBA INTEGRAL (CASOS VÁLIDOS) - GRAMÁTICA GBD
+// Cubre: Modelos, tipos de datos, restricciones, valores por defecto,
+// llamadas simples, encadenamiento de métodos (method chaining),
+// operadores aritméticos (+, -, *, /, %), unarios (+, -),
+// relacionales (=, !=, <, >, <=, >=) y lógicos (not, and, or).
+// =========================================================================
+
+/* 
+   1. DECLARACIÓN DE MODELOS (DDL)
+   Se prueban todos los tipos: auto, string, text, num, decimal(p,s), bool
+   y todas las restricciones: main key, external key, required, unique, default
+*/
+Model Estudiante:
+	matricula: auto main key
+	nombre: string required
+	correo: string unique
+	biografia: text default = "Sin biografia registrada"
+	edad: num required default = 18
+	semestre: num default = 1
+	promedio: decimal(4,2) default = 0.0
+	saldo_adeudo: decimal(10,2) default = -10.50
+	becado: bool default = false
+	fecha_ingreso: string default = 2026-08-15
+
+model Curso:
+	id_curso: auto main key
+	id_estudiante: num external key required
+	nombre_curso: string required unique
+	creditos: num default = 6
+	activo: bool default = true
+
+// =========================================================================
+// 2. INSERCIÓN Y OPERACIONES BÁSICAS CON MÚLTIPLES PARÁMETROS (DML)
+// =========================================================================
+
+Estudiante.new(nombre = "Jose Cruz Castillo", correo = "jose.cruz@unach.mx", edad = 67, promedio = 9.5, saldo_adeudo = -150.75, becado = true, fecha_ingreso = 2026-01-10)
+Estudiante.add(nombre = "Bernardo Manuel Vargas", correo = 'bernardo.vargas@unach.mx', edad = 21, semestre = 6, promedio = 9.2, saldo_adeudo = 0.0, becado = true)
+Estudiante.add(nombre = "Carlos Daniel", correo = empty, edad = 19, semestre = 3, promedio = 8.4, becado = false)
+
+Curso.new(id_estudiante = 1, nombre_curso = "Compiladores", creditos = 8, activo = true)
+
+// =========================================================================
+// 3. ENCADENAMIENTO DE MÉTODOS (METHOD CHAINING)
+// =========================================================================
+
+// Consulta básica encadenada con filtro simple
+Estudiante.find().if(nombre = "Jose Cruz Castillo")
+
+// Selección de campos específicos + filtro + ordenamiento + paginación
+Estudiante.find(matricula, nombre, promedio).if(semestre >= 5).up(promedio).take(10).skip(0)
+
+// Ordenamiento descendente encadenado
+Estudiante.find(nombre, edad).if(becado = true).down(edad)
+
+// Unión de modelos (link), agrupación (group) y filtro de grupo (ifgroup)
+Estudiante.find(semestre).link(Curso).group(semestre).ifgroup(semestre > 3).up(semestre)
+
+// Modificación y eliminación encadenadas con condicionales
+Estudiante.find().if(matricula = 2001).modify(semestre = 6, promedio = 9.8)
+Estudiante.find().if(activo = false).remove()
+
+// Funciones de agregación invocadas como métodos
+Estudiante.count()
+Estudiante.sum(saldo_adeudo)
+Estudiante.avg(promedio).if(becado = true)
+Estudiante.max(edad)
+Estudiante.min(edad)
+
+// =========================================================================
+// 4. PRECEDENCIA ARITMÉTICA, MÓDULO (%) Y OPERADORES UNARIOS (+, -)
+// =========================================================================
+
+// Uso de números negativos y positivos unarios (OP_UNARIO: -, +)
+Estudiante.find().if(saldo_adeudo <= -100.00)
+Estudiante.find().if(saldo_adeudo = +50.00)
+Estudiante.modify(saldo_adeudo = -10, semestre = +2)
+
+// Uso del operador módulo (%) y combinación con *, /, +, -
+//Verifica asociatividad por la izquierda: 10 - 3 - 2 se agrupa como (10 - 3) - 2
+Estudiante.find().if(matricula % 2 = 0)
+Estudiante.find().if((edad + 2) % 5 = 0)
+Estudiante.find().if(promedio * 10 / 2 + 5 - 3 - 1 >= 80)
+
+// Operaciones aritméticas con signos unarios anidados
+Estudiante.find().if(-saldo_adeudo * 2 > 100)
+Estudiante.find().if(-(edad - 18) < 0)
+
+// =========================================================================
+// 5. OPERADORES RELACIONALES, LÓGICOS (NOT, AND, OR) Y AGRUPACIONES ()
+// =========================================================================
+
+// Todos los operadores relacionales: =, !=, <, >, <=, >=
+Estudiante.find().if(edad > 18 and edad < 30 and semestre >= 2 and semestre <= 8 and correo != empty and becado = true)
+
+// Precedencia lógica estándar: NOT > AND > OR
+Estudiante.find().if(becado = true or promedio >= 9.0 and semestre > 4)
+
+// Operador NOT aplicado a expresión relacional simple
+Estudiante.find().if(not becado = false)
+
+// Operador NOT aplicado a una expresión lógica agrupada entre paréntesis
+Estudiante.find().if(not (edad > 18 and activo = true))
+
+// Operador NOT recursivo (doble negación) y paréntesis anidados complejos
+Estudiante.find().if(not not (promedio >= 8.5 or (semestre >= 6 and saldo_adeudo = 0)))
+
+// Combinación completa: aritmética + módulo + unario + relacional + lógica + encadenamiento
+Estudiante.find(matricula, nombre, promedio).if(not ((edad + 4) % 2 != 0 or saldo_adeudo < -500.00) and (promedio * 10 >= 85 or becado = true)).up(nombre).take(5)

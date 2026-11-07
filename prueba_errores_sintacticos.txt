@@ -1,0 +1,24 @@
+// =========================================================================
+// ARCHIVO DE PRUEBA DE ERRORES SINTÁCTICOS Y LÉXICOS
+// Diseñado para verificar la detección y reporte de errores del compilador
+// =========================================================================
+
+// Error 1: Falta de dos puntos (:) al final de la declaración del modelo
+Model Producto
+	id_producto: auto main key
+	precio: decimal(10,2)
+
+// Error 2: Falta de paréntesis de cierre en llamada a método
+Estudiante.find(edad = 67
+
+// Error 3: Falta de operador o coma entre parámetros
+Estudiante.new(nombre "Jose Cruz", edad = 67)
+
+// Error 4: Punto colgante sin método en encadenamiento
+Estudiante.find().if(nombre = "Jose").
+
+// Error 5: Operador binario incompleto dentro de una expresión
+Estudiante.find().if(edad >= and activo = true)
+
+// Error 6: Paréntesis desbalanceados en expresión lógica agrupada con NOT
+Estudiante.find().if(not (edad > 18 and activo = true)

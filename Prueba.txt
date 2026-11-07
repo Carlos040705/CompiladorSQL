@@ -12,8 +12,10 @@ Esto es un comentario de varias lineas
 
 estudiante.find(nombre = "Jose Cruz Castillo")*/
 
-estudiante.find(nombre = "Jose Cruz Castillo")
+estudiante.find().if(nombre = "Jose Cruz Castillo")
 estudiante.modify(nombre = "Jose Cruz Castillo")
 estudiante.remove(nombre = "Jose Cruz Castillo")
 estudiante.find(nombre = "Jose Cruz Castillo")
-estudiante.find(nombre = "Jose Cruz Castillo")
+estudiante.new(nombre = "Jose Cruz Castillo", edad = 67, peso = 160.00)
+estudiante.find().if((edad + 2) % 5 = 0 and peso > -10)
+estudiante.find().if(not (edad > 18 and nombre = "Jose"))

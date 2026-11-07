@@ -1,28 +1,52 @@
+import sys
+from pathlib import Path
 from lexer import lexer
 from parser import parser, errores_sintacticos
 from visitor import ASTPrinter
 
-#reemplazar con la ruta al archivo de prueba incluido (CompiladorSQL/Prueba.txt)
-ruta_entrada = "C:/Users/varga/OneDrive/Desktop/CompiladorSQL/Prueba.txt" 
-cad = ''
-with open(ruta_entrada, encoding= "UTF-8", mode= 'r') as f:
-    cad += f.read()
-    
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
-codigo_prueba = cad
+def analizar_archivo(ruta: Path):
+    print("\n" + "=" * 65)
+    print(f"ANALIZANDO ARCHIVO: {ruta.name}")
+    print("=" * 65)
+    if not ruta.is_file():
+        print(f"[!] El archivo '{ruta}' no existe.")
+        return
 
-# ejecución de prueba
-ast_resultado = parser.parse(codigo_prueba, lexer=lexer)
+    codigo_prueba = ruta.read_text(encoding="utf-8")
+    if not codigo_prueba.endswith("\n"):
+        codigo_prueba += "\n"
 
-print("="*50)
-if errores_sintacticos:
-    print("error")
-    for err in errores_sintacticos:
-        print(err)
-else:
-    print("exito")
-    print("arbol: ")
-    if ast_resultado:
-        printer = ASTPrinter()
-        printer.visit(ast_resultado)
-print("="*50)
+    errores_sintacticos.clear()
+    ast_resultado = parser.parse(codigo_prueba, lexer=lexer)
+
+    if errores_sintacticos:
+        print(f"\nResultado: Se encontraron {len(errores_sintacticos)} errores sintácticos.")
+    else:
+        print("\nResultado: ÉXITO (0 errores sintácticos).")
+        print("Árbol Sintáctico Abstracto (AST):")
+        if ast_resultado:
+            printer = ASTPrinter()
+            printer.visit(ast_resultado)
+    print("=" * 65)
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            ruta_arg = Path(arg)
+            if not ruta_arg.is_absolute():
+                ruta_arg = ROOT_DIR / arg
+            analizar_archivo(ruta_arg)
+    else:
+        archivos_default = [
+            "Prueba.txt",
+            "Prueba_Completa_Valida.txt",
+            "Prueba_Expresiones_y_Cadenas.txt",
+            "Prueba_Errores_Sintacticos.txt",
+        ]
+        encontrados = [ROOT_DIR / nombre for nombre in archivos_default if (ROOT_DIR / nombre).is_file()]
+        if not encontrados:
+            print("No se encontraron archivos de prueba en la raíz del proyecto.")
+        for ruta in encontrados:
+            analizar_archivo(ruta)

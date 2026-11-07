@@ -50,14 +50,23 @@ class Constraint(Node):
         return f"Constraint({self.constraint_type})"
 
 #operaciones de base de datos DML
-class DbOperation(Node):
-    def __init__(self, model_name, method, arguments=None):
-        self.model_name = model_name
-        self.method = method # DML
+class MethodCall(Node):
+    def __init__(self, method, arguments=None):
+        self.method = method
         self.arguments = arguments or []
 
     def __repr__(self):
-        return f"DbOperation(model={self.model_name}, method={self.method}, arguments={self.arguments})"
+        return f"MethodCall(method={self.method}, arguments={self.arguments})"
+
+class DbOperation(Node):
+    def __init__(self, model_name, calls):
+        self.model_name = model_name
+        self.calls = calls  # lista de objetos MethodCall
+        self.method = calls[0].method if calls else None
+        self.arguments = calls[0].arguments if calls else []
+
+    def __repr__(self):
+        return f"DbOperation(model={self.model_name}, calls={self.calls})"
 
 class Parameter(Node):
     def __init__(self, name, value):

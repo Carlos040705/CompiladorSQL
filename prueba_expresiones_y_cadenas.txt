@@ -1,0 +1,33 @@
+// =========================================================================
+// PRUEBA DE ESTRÉS: JERARQUÍA DE EXPRESIONES Y CADENAS LARGAS DE MÉTODOS
+// Enfocada en validar el árbol sintáctico (AST) para:
+// () > OP_UNARIO > OP_MULT_DIV_MOD > OP_SUMA_RESTA > OP_RELACIONAL > NOT > AND > OR
+// =========================================================================
+
+// 1. Precedencia aritmética y asociatividad por la izquierda
+// Debe construir BinaryOperation anidados a la izquierda: ((100 - 20) - 10)
+Estudiante.modify(edad = 100 - 20 - 10)
+
+// Multiplicación, división y módulo antes que suma y resta: 10 + ((20 * 3) / 2) - (15 % 4)
+Estudiante.modify(promedio = 10 + 20 * 3 / 2 - 15 % 4)
+
+// 2. Operadores unarios (+ y -) combinados con factores y paréntesis
+Estudiante.modify(saldo = -10)
+Estudiante.modify(saldo = +25.5)
+Estudiante.modify(saldo = -(-10 + 5) * -2)
+Estudiante.find().if(-edad + 30 >= +10)
+
+// 3. Agrupación con paréntesis alterando la precedencia natural
+Estudiante.find().if((edad + 2) * (semestre - 1) / (creditos % 3) >= 15)
+
+// 4. Negación lógica (NOT) sobre expresiones entre paréntesis y encadenadas
+Estudiante.find().if(not (edad < 18))
+Estudiante.find().if(not (edad > 18 and activo = true))
+Estudiante.find().if(not (semestre = 1 or semestre = 2) and not becado = false)
+
+// 5. Cadenas de métodos de 2, 3, 4, 5 y 6 eslabones
+Estudiante.find().if(nombre = "Jose")
+Estudiante.find(nombre, edad).if(edad >= 18).up(edad)
+Estudiante.find(nombre, promedio).if(becado = true).down(promedio).take(5)
+Estudiante.find(semestre, promedio).link(Curso).if(activo = true).group(semestre).ifgroup(promedio > 8.0)
+Estudiante.find(matricula, nombre).link(Curso).if(not (creditos < 4 or activo = false)).group(matricula).ifgroup(creditos >= 6).up(nombre).take(20).skip(5)

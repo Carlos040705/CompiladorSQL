@@ -1,0 +1,2333 @@
+Created by PLY version 3.11 (http://www.dabeaz.com/ply)
+
+Unused terminals:
+
+    ALIAS
+    CHANGE
+    ERASE
+    IN
+    RANGE
+    SIMILAR
+    VALIDATE
+
+Grammar
+
+Rule 0     S' -> start
+Rule 1     start -> programa
+Rule 2     programa -> sentencia programa
+Rule 3     programa -> sentencia
+Rule 4     sentencia -> declaracion_modelo
+Rule 5     sentencia -> operacion_db
+Rule 6     sentencia -> SALTO_LINEA
+Rule 7     sentencia -> error SALTO_LINEA
+Rule 8     sentencia -> error DEDENT
+Rule 9     declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT
+Rule 10    declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT
+Rule 11    lista_campos -> campo SALTO_LINEA lista_campos
+Rule 12    lista_campos -> SALTO_LINEA lista_campos
+Rule 13    lista_campos -> campo SALTO_LINEA
+Rule 14    lista_campos -> campo
+Rule 15    lista_campos -> SALTO_LINEA
+Rule 16    campo -> IDENTIFIER COLON tipo_dato restricciones_opt
+Rule 17    tipo_dato -> STRING
+Rule 18    tipo_dato -> AUTO
+Rule 19    tipo_dato -> NUM
+Rule 20    tipo_dato -> TEXT
+Rule 21    tipo_dato -> BOOL
+Rule 22    tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN
+Rule 23    restricciones_opt -> restriccion restricciones_opt
+Rule 24    restricciones_opt -> <empty>
+Rule 25    restriccion -> REQUIRED
+Rule 26    restriccion -> UNIQUE
+Rule 27    restriccion -> MAIN KEY
+Rule 28    restriccion -> EXTERNAL KEY
+Rule 29    restriccion -> DEFAULT ASSIGN factor
+Rule 30    operacion_db -> IDENTIFIER cadena_metodos
+Rule 31    cadena_metodos -> DOT llamada_metodo cadena_metodos
+Rule 32    cadena_metodos -> DOT llamada_metodo
+Rule 33    llamada_metodo -> metodo LPAREN argumentos_opt RPAREN
+Rule 34    metodo -> NEW
+Rule 35    metodo -> FIND
+Rule 36    metodo -> MODIFY
+Rule 37    metodo -> REMOVE
+Rule 38    metodo -> ADD
+Rule 39    metodo -> IF
+Rule 40    metodo -> LINK
+Rule 41    metodo -> GROUP
+Rule 42    metodo -> IFGROUP
+Rule 43    metodo -> UP
+Rule 44    metodo -> DOWN
+Rule 45    metodo -> TAKE
+Rule 46    metodo -> SKIP
+Rule 47    metodo -> COUNT
+Rule 48    metodo -> SUM
+Rule 49    metodo -> AVG
+Rule 50    metodo -> MAX
+Rule 51    metodo -> MIN
+Rule 52    metodo -> IDENTIFIER
+Rule 53    argumentos_opt -> lista_argumentos
+Rule 54    argumentos_opt -> <empty>
+Rule 55    lista_argumentos -> parametro COMMA lista_argumentos
+Rule 56    lista_argumentos -> parametro
+Rule 57    parametro -> expresion
+Rule 58    expresion -> expresion_or
+Rule 59    expresion_or -> expresion_or OR expresion_and
+Rule 60    expresion_or -> expresion_and
+Rule 61    expresion_and -> expresion_and AND expresion_not
+Rule 62    expresion_and -> expresion_not
+Rule 63    expresion_not -> NOT expresion_not
+Rule 64    expresion_not -> expresion_relacional
+Rule 65    expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica
+Rule 66    expresion_relacional -> expresion_aritmetica
+Rule 67    op_relacional -> ASSIGN
+Rule 68    op_relacional -> NOT_EQUAL
+Rule 69    op_relacional -> LESS
+Rule 70    op_relacional -> GREATER
+Rule 71    op_relacional -> LESS_EQUAL
+Rule 72    op_relacional -> GREATER_EQUAL
+Rule 73    expresion_aritmetica -> expresion_aritmetica op_suma_resta termino
+Rule 74    expresion_aritmetica -> termino
+Rule 75    op_suma_resta -> PLUS
+Rule 76    op_suma_resta -> MINUS
+Rule 77    termino -> termino op_mult_div_mod factor
+Rule 78    termino -> factor
+Rule 79    op_mult_div_mod -> TIMES
+Rule 80    op_mult_div_mod -> DIVIDE
+Rule 81    op_mult_div_mod -> MODULO
+Rule 82    factor -> LPAREN expresion RPAREN
+Rule 83    factor -> op_unario factor
+Rule 84    factor -> valor
+Rule 85    op_unario -> PLUS
+Rule 86    op_unario -> MINUS
+Rule 87    valor -> STRING_LITERAL
+Rule 88    valor -> NUMBER_INT
+Rule 89    valor -> NUMBER_DECIMAL
+Rule 90    valor -> DATE_LITERAL
+Rule 91    valor -> TRUE
+Rule 92    valor -> FALSE
+Rule 93    valor -> EMPTY
+Rule 94    valor -> IDENTIFIER
+
+Terminals, with rules where they appear
+
+ADD                  : 38
+ALIAS                : 
+AND                  : 61
+ASSIGN               : 29 67
+AUTO                 : 18
+AVG                  : 49
+BOOL                 : 21
+CHANGE               : 
+COLON                : 9 16
+COMMA                : 22 55
+COUNT                : 47
+DATE_LITERAL         : 90
+DECIMAL              : 22
+DEDENT               : 8 9 10
+DEFAULT              : 29
+DIVIDE               : 80
+DOT                  : 31 32
+DOWN                 : 44
+EMPTY                : 93
+ERASE                : 
+EXTERNAL             : 28
+FALSE                : 92
+FIND                 : 35
+GREATER              : 70
+GREATER_EQUAL        : 72
+GROUP                : 41
+IDENTIFIER           : 9 16 30 52 94
+IF                   : 39
+IFGROUP              : 42
+IN                   : 
+INDENT               : 9 10
+KEY                  : 27 28
+LESS                 : 69
+LESS_EQUAL           : 71
+LINK                 : 40
+LPAREN               : 22 33 82
+MAIN                 : 27
+MAX                  : 50
+MIN                  : 51
+MINUS                : 76 86
+MODEL                : 9 10
+MODIFY               : 36
+MODULO               : 81
+NEW                  : 34
+NOT                  : 63
+NOT_EQUAL            : 68
+NUM                  : 19
+NUMBER_DECIMAL       : 89
+NUMBER_INT           : 22 22 88
+OR                   : 59
+PLUS                 : 75 85
+RANGE                : 
+REMOVE               : 37
+REQUIRED             : 25
+RPAREN               : 22 33 82
+SALTO_LINEA          : 6 7 9 10 11 12 13 15
+SIMILAR              : 
+SKIP                 : 46
+STRING               : 17
+STRING_LITERAL       : 87
+SUM                  : 48
+TAKE                 : 45
+TEXT                 : 20
+TIMES                : 79
+TRUE                 : 91
+UNIQUE               : 26
+UP                   : 43
+VALIDATE             : 
+error                : 7 8 10
+
+Nonterminals, with rules where they appear
+
+argumentos_opt       : 33
+cadena_metodos       : 30 31
+campo                : 11 13 14
+declaracion_modelo   : 4
+expresion            : 57 82
+expresion_and        : 59 60 61
+expresion_aritmetica : 65 65 66 73
+expresion_not        : 61 62 63
+expresion_or         : 58 59
+expresion_relacional : 64
+factor               : 29 77 78 83
+lista_argumentos     : 53 55
+lista_campos         : 9 10 11 12
+llamada_metodo       : 31 32
+metodo               : 33
+op_mult_div_mod      : 77
+op_relacional        : 65
+op_suma_resta        : 73
+op_unario            : 83
+operacion_db         : 5
+parametro            : 55 56
+programa             : 1 2
+restriccion          : 23
+restricciones_opt    : 16 23
+sentencia            : 2 3
+start                : 0
+termino              : 73 74 77
+tipo_dato            : 16
+valor                : 84
+
+Parsing method: LALR
+
+state 0
+
+    (0) S' -> . start
+    (1) start -> . programa
+    (2) programa -> . sentencia programa
+    (3) programa -> . sentencia
+    (4) sentencia -> . declaracion_modelo
+    (5) sentencia -> . operacion_db
+    (6) sentencia -> . SALTO_LINEA
+    (7) sentencia -> . error SALTO_LINEA
+    (8) sentencia -> . error DEDENT
+    (9) declaracion_modelo -> . MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT
+    (10) declaracion_modelo -> . MODEL error SALTO_LINEA INDENT lista_campos DEDENT
+    (30) operacion_db -> . IDENTIFIER cadena_metodos
+
+    SALTO_LINEA     shift and go to state 6
+    error           shift and go to state 7
+    MODEL           shift and go to state 8
+    IDENTIFIER      shift and go to state 9
+
+    start                          shift and go to state 1
+    programa                       shift and go to state 2
+    sentencia                      shift and go to state 3
+    declaracion_modelo             shift and go to state 4
+    operacion_db                   shift and go to state 5
+
+state 1
+
+    (0) S' -> start .
+
+
+
+state 2
+
+    (1) start -> programa .
+
+    $end            reduce using rule 1 (start -> programa .)
+
+
+state 3
+
+    (2) programa -> sentencia . programa
+    (3) programa -> sentencia .
+    (2) programa -> . sentencia programa
+    (3) programa -> . sentencia
+    (4) sentencia -> . declaracion_modelo
+    (5) sentencia -> . operacion_db
+    (6) sentencia -> . SALTO_LINEA
+    (7) sentencia -> . error SALTO_LINEA
+    (8) sentencia -> . error DEDENT
+    (9) declaracion_modelo -> . MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT
+    (10) declaracion_modelo -> . MODEL error SALTO_LINEA INDENT lista_campos DEDENT
+    (30) operacion_db -> . IDENTIFIER cadena_metodos
+
+    $end            reduce using rule 3 (programa -> sentencia .)
+    SALTO_LINEA     shift and go to state 6
+    error           shift and go to state 7
+    MODEL           shift and go to state 8
+    IDENTIFIER      shift and go to state 9
+
+    sentencia                      shift and go to state 3
+    programa                       shift and go to state 10
+    declaracion_modelo             shift and go to state 4
+    operacion_db                   shift and go to state 5
+
+state 4
+
+    (4) sentencia -> declaracion_modelo .
+
+    SALTO_LINEA     reduce using rule 4 (sentencia -> declaracion_modelo .)
+    error           reduce using rule 4 (sentencia -> declaracion_modelo .)
+    MODEL           reduce using rule 4 (sentencia -> declaracion_modelo .)
+    IDENTIFIER      reduce using rule 4 (sentencia -> declaracion_modelo .)
+    $end            reduce using rule 4 (sentencia -> declaracion_modelo .)
+
+
+state 5
+
+    (5) sentencia -> operacion_db .
+
+    SALTO_LINEA     reduce using rule 5 (sentencia -> operacion_db .)
+    error           reduce using rule 5 (sentencia -> operacion_db .)
+    MODEL           reduce using rule 5 (sentencia -> operacion_db .)
+    IDENTIFIER      reduce using rule 5 (sentencia -> operacion_db .)
+    $end            reduce using rule 5 (sentencia -> operacion_db .)
+
+
+state 6
+
+    (6) sentencia -> SALTO_LINEA .
+
+    SALTO_LINEA     reduce using rule 6 (sentencia -> SALTO_LINEA .)
+    error           reduce using rule 6 (sentencia -> SALTO_LINEA .)
+    MODEL           reduce using rule 6 (sentencia -> SALTO_LINEA .)
+    IDENTIFIER      reduce using rule 6 (sentencia -> SALTO_LINEA .)
+    $end            reduce using rule 6 (sentencia -> SALTO_LINEA .)
+
+
+state 7
+
+    (7) sentencia -> error . SALTO_LINEA
+    (8) sentencia -> error . DEDENT
+
+    SALTO_LINEA     shift and go to state 11
+    DEDENT          shift and go to state 12
+
+
+state 8
+
+    (9) declaracion_modelo -> MODEL . IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT
+    (10) declaracion_modelo -> MODEL . error SALTO_LINEA INDENT lista_campos DEDENT
+
+    IDENTIFIER      shift and go to state 13
+    error           shift and go to state 14
+
+
+state 9
+
+    (30) operacion_db -> IDENTIFIER . cadena_metodos
+    (31) cadena_metodos -> . DOT llamada_metodo cadena_metodos
+    (32) cadena_metodos -> . DOT llamada_metodo
+
+    DOT             shift and go to state 16
+
+    cadena_metodos                 shift and go to state 15
+
+state 10
+
+    (2) programa -> sentencia programa .
+
+    $end            reduce using rule 2 (programa -> sentencia programa .)
+
+
+state 11
+
+    (7) sentencia -> error SALTO_LINEA .
+
+    SALTO_LINEA     reduce using rule 7 (sentencia -> error SALTO_LINEA .)
+    error           reduce using rule 7 (sentencia -> error SALTO_LINEA .)
+    MODEL           reduce using rule 7 (sentencia -> error SALTO_LINEA .)
+    IDENTIFIER      reduce using rule 7 (sentencia -> error SALTO_LINEA .)
+    $end            reduce using rule 7 (sentencia -> error SALTO_LINEA .)
+
+
+state 12
+
+    (8) sentencia -> error DEDENT .
+
+    SALTO_LINEA     reduce using rule 8 (sentencia -> error DEDENT .)
+    error           reduce using rule 8 (sentencia -> error DEDENT .)
+    MODEL           reduce using rule 8 (sentencia -> error DEDENT .)
+    IDENTIFIER      reduce using rule 8 (sentencia -> error DEDENT .)
+    $end            reduce using rule 8 (sentencia -> error DEDENT .)
+
+
+state 13
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER . COLON SALTO_LINEA INDENT lista_campos DEDENT
+
+    COLON           shift and go to state 17
+
+
+state 14
+
+    (10) declaracion_modelo -> MODEL error . SALTO_LINEA INDENT lista_campos DEDENT
+
+    SALTO_LINEA     shift and go to state 18
+
+
+state 15
+
+    (30) operacion_db -> IDENTIFIER cadena_metodos .
+
+    SALTO_LINEA     reduce using rule 30 (operacion_db -> IDENTIFIER cadena_metodos .)
+    error           reduce using rule 30 (operacion_db -> IDENTIFIER cadena_metodos .)
+    MODEL           reduce using rule 30 (operacion_db -> IDENTIFIER cadena_metodos .)
+    IDENTIFIER      reduce using rule 30 (operacion_db -> IDENTIFIER cadena_metodos .)
+    $end            reduce using rule 30 (operacion_db -> IDENTIFIER cadena_metodos .)
+
+
+state 16
+
+    (31) cadena_metodos -> DOT . llamada_metodo cadena_metodos
+    (32) cadena_metodos -> DOT . llamada_metodo
+    (33) llamada_metodo -> . metodo LPAREN argumentos_opt RPAREN
+    (34) metodo -> . NEW
+    (35) metodo -> . FIND
+    (36) metodo -> . MODIFY
+    (37) metodo -> . REMOVE
+    (38) metodo -> . ADD
+    (39) metodo -> . IF
+    (40) metodo -> . LINK
+    (41) metodo -> . GROUP
+    (42) metodo -> . IFGROUP
+    (43) metodo -> . UP
+    (44) metodo -> . DOWN
+    (45) metodo -> . TAKE
+    (46) metodo -> . SKIP
+    (47) metodo -> . COUNT
+    (48) metodo -> . SUM
+    (49) metodo -> . AVG
+    (50) metodo -> . MAX
+    (51) metodo -> . MIN
+    (52) metodo -> . IDENTIFIER
+
+    NEW             shift and go to state 21
+    FIND            shift and go to state 22
+    MODIFY          shift and go to state 23
+    REMOVE          shift and go to state 24
+    ADD             shift and go to state 25
+    IF              shift and go to state 26
+    LINK            shift and go to state 27
+    GROUP           shift and go to state 28
+    IFGROUP         shift and go to state 29
+    UP              shift and go to state 30
+    DOWN            shift and go to state 31
+    TAKE            shift and go to state 32
+    SKIP            shift and go to state 33
+    COUNT           shift and go to state 34
+    SUM             shift and go to state 35
+    AVG             shift and go to state 36
+    MAX             shift and go to state 37
+    MIN             shift and go to state 38
+    IDENTIFIER      shift and go to state 39
+
+    llamada_metodo                 shift and go to state 19
+    metodo                         shift and go to state 20
+
+state 17
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER COLON . SALTO_LINEA INDENT lista_campos DEDENT
+
+    SALTO_LINEA     shift and go to state 40
+
+
+state 18
+
+    (10) declaracion_modelo -> MODEL error SALTO_LINEA . INDENT lista_campos DEDENT
+
+    INDENT          shift and go to state 41
+
+
+state 19
+
+    (31) cadena_metodos -> DOT llamada_metodo . cadena_metodos
+    (32) cadena_metodos -> DOT llamada_metodo .
+    (31) cadena_metodos -> . DOT llamada_metodo cadena_metodos
+    (32) cadena_metodos -> . DOT llamada_metodo
+
+    SALTO_LINEA     reduce using rule 32 (cadena_metodos -> DOT llamada_metodo .)
+    error           reduce using rule 32 (cadena_metodos -> DOT llamada_metodo .)
+    MODEL           reduce using rule 32 (cadena_metodos -> DOT llamada_metodo .)
+    IDENTIFIER      reduce using rule 32 (cadena_metodos -> DOT llamada_metodo .)
+    $end            reduce using rule 32 (cadena_metodos -> DOT llamada_metodo .)
+    DOT             shift and go to state 16
+
+    cadena_metodos                 shift and go to state 42
+
+state 20
+
+    (33) llamada_metodo -> metodo . LPAREN argumentos_opt RPAREN
+
+    LPAREN          shift and go to state 43
+
+
+state 21
+
+    (34) metodo -> NEW .
+
+    LPAREN          reduce using rule 34 (metodo -> NEW .)
+
+
+state 22
+
+    (35) metodo -> FIND .
+
+    LPAREN          reduce using rule 35 (metodo -> FIND .)
+
+
+state 23
+
+    (36) metodo -> MODIFY .
+
+    LPAREN          reduce using rule 36 (metodo -> MODIFY .)
+
+
+state 24
+
+    (37) metodo -> REMOVE .
+
+    LPAREN          reduce using rule 37 (metodo -> REMOVE .)
+
+
+state 25
+
+    (38) metodo -> ADD .
+
+    LPAREN          reduce using rule 38 (metodo -> ADD .)
+
+
+state 26
+
+    (39) metodo -> IF .
+
+    LPAREN          reduce using rule 39 (metodo -> IF .)
+
+
+state 27
+
+    (40) metodo -> LINK .
+
+    LPAREN          reduce using rule 40 (metodo -> LINK .)
+
+
+state 28
+
+    (41) metodo -> GROUP .
+
+    LPAREN          reduce using rule 41 (metodo -> GROUP .)
+
+
+state 29
+
+    (42) metodo -> IFGROUP .
+
+    LPAREN          reduce using rule 42 (metodo -> IFGROUP .)
+
+
+state 30
+
+    (43) metodo -> UP .
+
+    LPAREN          reduce using rule 43 (metodo -> UP .)
+
+
+state 31
+
+    (44) metodo -> DOWN .
+
+    LPAREN          reduce using rule 44 (metodo -> DOWN .)
+
+
+state 32
+
+    (45) metodo -> TAKE .
+
+    LPAREN          reduce using rule 45 (metodo -> TAKE .)
+
+
+state 33
+
+    (46) metodo -> SKIP .
+
+    LPAREN          reduce using rule 46 (metodo -> SKIP .)
+
+
+state 34
+
+    (47) metodo -> COUNT .
+
+    LPAREN          reduce using rule 47 (metodo -> COUNT .)
+
+
+state 35
+
+    (48) metodo -> SUM .
+
+    LPAREN          reduce using rule 48 (metodo -> SUM .)
+
+
+state 36
+
+    (49) metodo -> AVG .
+
+    LPAREN          reduce using rule 49 (metodo -> AVG .)
+
+
+state 37
+
+    (50) metodo -> MAX .
+
+    LPAREN          reduce using rule 50 (metodo -> MAX .)
+
+
+state 38
+
+    (51) metodo -> MIN .
+
+    LPAREN          reduce using rule 51 (metodo -> MIN .)
+
+
+state 39
+
+    (52) metodo -> IDENTIFIER .
+
+    LPAREN          reduce using rule 52 (metodo -> IDENTIFIER .)
+
+
+state 40
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA . INDENT lista_campos DEDENT
+
+    INDENT          shift and go to state 44
+
+
+state 41
+
+    (10) declaracion_modelo -> MODEL error SALTO_LINEA INDENT . lista_campos DEDENT
+    (11) lista_campos -> . campo SALTO_LINEA lista_campos
+    (12) lista_campos -> . SALTO_LINEA lista_campos
+    (13) lista_campos -> . campo SALTO_LINEA
+    (14) lista_campos -> . campo
+    (15) lista_campos -> . SALTO_LINEA
+    (16) campo -> . IDENTIFIER COLON tipo_dato restricciones_opt
+
+    SALTO_LINEA     shift and go to state 45
+    IDENTIFIER      shift and go to state 48
+
+    lista_campos                   shift and go to state 46
+    campo                          shift and go to state 47
+
+state 42
+
+    (31) cadena_metodos -> DOT llamada_metodo cadena_metodos .
+
+    SALTO_LINEA     reduce using rule 31 (cadena_metodos -> DOT llamada_metodo cadena_metodos .)
+    error           reduce using rule 31 (cadena_metodos -> DOT llamada_metodo cadena_metodos .)
+    MODEL           reduce using rule 31 (cadena_metodos -> DOT llamada_metodo cadena_metodos .)
+    IDENTIFIER      reduce using rule 31 (cadena_metodos -> DOT llamada_metodo cadena_metodos .)
+    $end            reduce using rule 31 (cadena_metodos -> DOT llamada_metodo cadena_metodos .)
+
+
+state 43
+
+    (33) llamada_metodo -> metodo LPAREN . argumentos_opt RPAREN
+    (53) argumentos_opt -> . lista_argumentos
+    (54) argumentos_opt -> .
+    (55) lista_argumentos -> . parametro COMMA lista_argumentos
+    (56) lista_argumentos -> . parametro
+    (57) parametro -> . expresion
+    (58) expresion -> . expresion_or
+    (59) expresion_or -> . expresion_or OR expresion_and
+    (60) expresion_or -> . expresion_and
+    (61) expresion_and -> . expresion_and AND expresion_not
+    (62) expresion_and -> . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    RPAREN          reduce using rule 54 (argumentos_opt -> .)
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    argumentos_opt                 shift and go to state 50
+    lista_argumentos               shift and go to state 51
+    parametro                      shift and go to state 52
+    expresion                      shift and go to state 53
+    expresion_or                   shift and go to state 54
+    expresion_and                  shift and go to state 55
+    expresion_not                  shift and go to state 56
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 44
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT . lista_campos DEDENT
+    (11) lista_campos -> . campo SALTO_LINEA lista_campos
+    (12) lista_campos -> . SALTO_LINEA lista_campos
+    (13) lista_campos -> . campo SALTO_LINEA
+    (14) lista_campos -> . campo
+    (15) lista_campos -> . SALTO_LINEA
+    (16) campo -> . IDENTIFIER COLON tipo_dato restricciones_opt
+
+    SALTO_LINEA     shift and go to state 45
+    IDENTIFIER      shift and go to state 48
+
+    lista_campos                   shift and go to state 74
+    campo                          shift and go to state 47
+
+state 45
+
+    (12) lista_campos -> SALTO_LINEA . lista_campos
+    (15) lista_campos -> SALTO_LINEA .
+    (11) lista_campos -> . campo SALTO_LINEA lista_campos
+    (12) lista_campos -> . SALTO_LINEA lista_campos
+    (13) lista_campos -> . campo SALTO_LINEA
+    (14) lista_campos -> . campo
+    (15) lista_campos -> . SALTO_LINEA
+    (16) campo -> . IDENTIFIER COLON tipo_dato restricciones_opt
+
+    DEDENT          reduce using rule 15 (lista_campos -> SALTO_LINEA .)
+    SALTO_LINEA     shift and go to state 45
+    IDENTIFIER      shift and go to state 48
+
+    lista_campos                   shift and go to state 75
+    campo                          shift and go to state 47
+
+state 46
+
+    (10) declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos . DEDENT
+
+    DEDENT          shift and go to state 76
+
+
+state 47
+
+    (11) lista_campos -> campo . SALTO_LINEA lista_campos
+    (13) lista_campos -> campo . SALTO_LINEA
+    (14) lista_campos -> campo .
+
+    SALTO_LINEA     shift and go to state 77
+    DEDENT          reduce using rule 14 (lista_campos -> campo .)
+
+
+state 48
+
+    (16) campo -> IDENTIFIER . COLON tipo_dato restricciones_opt
+
+    COLON           shift and go to state 78
+
+
+state 49
+
+    (82) factor -> LPAREN . expresion RPAREN
+    (58) expresion -> . expresion_or
+    (59) expresion_or -> . expresion_or OR expresion_and
+    (60) expresion_or -> . expresion_and
+    (61) expresion_and -> . expresion_and AND expresion_not
+    (62) expresion_and -> . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    expresion                      shift and go to state 79
+    expresion_or                   shift and go to state 54
+    expresion_and                  shift and go to state 55
+    expresion_not                  shift and go to state 56
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 50
+
+    (33) llamada_metodo -> metodo LPAREN argumentos_opt . RPAREN
+
+    RPAREN          shift and go to state 80
+
+
+state 51
+
+    (53) argumentos_opt -> lista_argumentos .
+
+    RPAREN          reduce using rule 53 (argumentos_opt -> lista_argumentos .)
+
+
+state 52
+
+    (55) lista_argumentos -> parametro . COMMA lista_argumentos
+    (56) lista_argumentos -> parametro .
+
+    COMMA           shift and go to state 81
+    RPAREN          reduce using rule 56 (lista_argumentos -> parametro .)
+
+
+state 53
+
+    (57) parametro -> expresion .
+
+    COMMA           reduce using rule 57 (parametro -> expresion .)
+    RPAREN          reduce using rule 57 (parametro -> expresion .)
+
+
+state 54
+
+    (58) expresion -> expresion_or .
+    (59) expresion_or -> expresion_or . OR expresion_and
+
+    COMMA           reduce using rule 58 (expresion -> expresion_or .)
+    RPAREN          reduce using rule 58 (expresion -> expresion_or .)
+    OR              shift and go to state 82
+
+
+state 55
+
+    (60) expresion_or -> expresion_and .
+    (61) expresion_and -> expresion_and . AND expresion_not
+
+    OR              reduce using rule 60 (expresion_or -> expresion_and .)
+    COMMA           reduce using rule 60 (expresion_or -> expresion_and .)
+    RPAREN          reduce using rule 60 (expresion_or -> expresion_and .)
+    AND             shift and go to state 83
+
+
+state 56
+
+    (62) expresion_and -> expresion_not .
+
+    AND             reduce using rule 62 (expresion_and -> expresion_not .)
+    OR              reduce using rule 62 (expresion_and -> expresion_not .)
+    COMMA           reduce using rule 62 (expresion_and -> expresion_not .)
+    RPAREN          reduce using rule 62 (expresion_and -> expresion_not .)
+
+
+state 57
+
+    (63) expresion_not -> NOT . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    expresion_not                  shift and go to state 84
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 58
+
+    (64) expresion_not -> expresion_relacional .
+
+    AND             reduce using rule 64 (expresion_not -> expresion_relacional .)
+    OR              reduce using rule 64 (expresion_not -> expresion_relacional .)
+    COMMA           reduce using rule 64 (expresion_not -> expresion_relacional .)
+    RPAREN          reduce using rule 64 (expresion_not -> expresion_relacional .)
+
+
+state 59
+
+    (65) expresion_relacional -> expresion_aritmetica . op_relacional expresion_aritmetica
+    (66) expresion_relacional -> expresion_aritmetica .
+    (73) expresion_aritmetica -> expresion_aritmetica . op_suma_resta termino
+    (67) op_relacional -> . ASSIGN
+    (68) op_relacional -> . NOT_EQUAL
+    (69) op_relacional -> . LESS
+    (70) op_relacional -> . GREATER
+    (71) op_relacional -> . LESS_EQUAL
+    (72) op_relacional -> . GREATER_EQUAL
+    (75) op_suma_resta -> . PLUS
+    (76) op_suma_resta -> . MINUS
+
+    AND             reduce using rule 66 (expresion_relacional -> expresion_aritmetica .)
+    OR              reduce using rule 66 (expresion_relacional -> expresion_aritmetica .)
+    COMMA           reduce using rule 66 (expresion_relacional -> expresion_aritmetica .)
+    RPAREN          reduce using rule 66 (expresion_relacional -> expresion_aritmetica .)
+    ASSIGN          shift and go to state 87
+    NOT_EQUAL       shift and go to state 88
+    LESS            shift and go to state 89
+    GREATER         shift and go to state 90
+    LESS_EQUAL      shift and go to state 91
+    GREATER_EQUAL   shift and go to state 92
+    PLUS            shift and go to state 93
+    MINUS           shift and go to state 94
+
+    op_relacional                  shift and go to state 85
+    op_suma_resta                  shift and go to state 86
+
+state 60
+
+    (74) expresion_aritmetica -> termino .
+    (77) termino -> termino . op_mult_div_mod factor
+    (79) op_mult_div_mod -> . TIMES
+    (80) op_mult_div_mod -> . DIVIDE
+    (81) op_mult_div_mod -> . MODULO
+
+    ASSIGN          reduce using rule 74 (expresion_aritmetica -> termino .)
+    NOT_EQUAL       reduce using rule 74 (expresion_aritmetica -> termino .)
+    LESS            reduce using rule 74 (expresion_aritmetica -> termino .)
+    GREATER         reduce using rule 74 (expresion_aritmetica -> termino .)
+    LESS_EQUAL      reduce using rule 74 (expresion_aritmetica -> termino .)
+    GREATER_EQUAL   reduce using rule 74 (expresion_aritmetica -> termino .)
+    PLUS            reduce using rule 74 (expresion_aritmetica -> termino .)
+    MINUS           reduce using rule 74 (expresion_aritmetica -> termino .)
+    AND             reduce using rule 74 (expresion_aritmetica -> termino .)
+    OR              reduce using rule 74 (expresion_aritmetica -> termino .)
+    COMMA           reduce using rule 74 (expresion_aritmetica -> termino .)
+    RPAREN          reduce using rule 74 (expresion_aritmetica -> termino .)
+    TIMES           shift and go to state 96
+    DIVIDE          shift and go to state 97
+    MODULO          shift and go to state 98
+
+    op_mult_div_mod                shift and go to state 95
+
+state 61
+
+    (78) termino -> factor .
+
+    TIMES           reduce using rule 78 (termino -> factor .)
+    DIVIDE          reduce using rule 78 (termino -> factor .)
+    MODULO          reduce using rule 78 (termino -> factor .)
+    ASSIGN          reduce using rule 78 (termino -> factor .)
+    NOT_EQUAL       reduce using rule 78 (termino -> factor .)
+    LESS            reduce using rule 78 (termino -> factor .)
+    GREATER         reduce using rule 78 (termino -> factor .)
+    LESS_EQUAL      reduce using rule 78 (termino -> factor .)
+    GREATER_EQUAL   reduce using rule 78 (termino -> factor .)
+    PLUS            reduce using rule 78 (termino -> factor .)
+    MINUS           reduce using rule 78 (termino -> factor .)
+    AND             reduce using rule 78 (termino -> factor .)
+    OR              reduce using rule 78 (termino -> factor .)
+    COMMA           reduce using rule 78 (termino -> factor .)
+    RPAREN          reduce using rule 78 (termino -> factor .)
+
+
+state 62
+
+    (83) factor -> op_unario . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    op_unario                      shift and go to state 62
+    factor                         shift and go to state 99
+    valor                          shift and go to state 63
+
+state 63
+
+    (84) factor -> valor .
+
+    TIMES           reduce using rule 84 (factor -> valor .)
+    DIVIDE          reduce using rule 84 (factor -> valor .)
+    MODULO          reduce using rule 84 (factor -> valor .)
+    ASSIGN          reduce using rule 84 (factor -> valor .)
+    NOT_EQUAL       reduce using rule 84 (factor -> valor .)
+    LESS            reduce using rule 84 (factor -> valor .)
+    GREATER         reduce using rule 84 (factor -> valor .)
+    LESS_EQUAL      reduce using rule 84 (factor -> valor .)
+    GREATER_EQUAL   reduce using rule 84 (factor -> valor .)
+    PLUS            reduce using rule 84 (factor -> valor .)
+    MINUS           reduce using rule 84 (factor -> valor .)
+    AND             reduce using rule 84 (factor -> valor .)
+    OR              reduce using rule 84 (factor -> valor .)
+    COMMA           reduce using rule 84 (factor -> valor .)
+    RPAREN          reduce using rule 84 (factor -> valor .)
+    REQUIRED        reduce using rule 84 (factor -> valor .)
+    UNIQUE          reduce using rule 84 (factor -> valor .)
+    MAIN            reduce using rule 84 (factor -> valor .)
+    EXTERNAL        reduce using rule 84 (factor -> valor .)
+    DEFAULT         reduce using rule 84 (factor -> valor .)
+    SALTO_LINEA     reduce using rule 84 (factor -> valor .)
+    DEDENT          reduce using rule 84 (factor -> valor .)
+
+
+state 64
+
+    (85) op_unario -> PLUS .
+
+    LPAREN          reduce using rule 85 (op_unario -> PLUS .)
+    PLUS            reduce using rule 85 (op_unario -> PLUS .)
+    MINUS           reduce using rule 85 (op_unario -> PLUS .)
+    STRING_LITERAL  reduce using rule 85 (op_unario -> PLUS .)
+    NUMBER_INT      reduce using rule 85 (op_unario -> PLUS .)
+    NUMBER_DECIMAL  reduce using rule 85 (op_unario -> PLUS .)
+    DATE_LITERAL    reduce using rule 85 (op_unario -> PLUS .)
+    TRUE            reduce using rule 85 (op_unario -> PLUS .)
+    FALSE           reduce using rule 85 (op_unario -> PLUS .)
+    EMPTY           reduce using rule 85 (op_unario -> PLUS .)
+    IDENTIFIER      reduce using rule 85 (op_unario -> PLUS .)
+
+
+state 65
+
+    (86) op_unario -> MINUS .
+
+    LPAREN          reduce using rule 86 (op_unario -> MINUS .)
+    PLUS            reduce using rule 86 (op_unario -> MINUS .)
+    MINUS           reduce using rule 86 (op_unario -> MINUS .)
+    STRING_LITERAL  reduce using rule 86 (op_unario -> MINUS .)
+    NUMBER_INT      reduce using rule 86 (op_unario -> MINUS .)
+    NUMBER_DECIMAL  reduce using rule 86 (op_unario -> MINUS .)
+    DATE_LITERAL    reduce using rule 86 (op_unario -> MINUS .)
+    TRUE            reduce using rule 86 (op_unario -> MINUS .)
+    FALSE           reduce using rule 86 (op_unario -> MINUS .)
+    EMPTY           reduce using rule 86 (op_unario -> MINUS .)
+    IDENTIFIER      reduce using rule 86 (op_unario -> MINUS .)
+
+
+state 66
+
+    (87) valor -> STRING_LITERAL .
+
+    TIMES           reduce using rule 87 (valor -> STRING_LITERAL .)
+    DIVIDE          reduce using rule 87 (valor -> STRING_LITERAL .)
+    MODULO          reduce using rule 87 (valor -> STRING_LITERAL .)
+    ASSIGN          reduce using rule 87 (valor -> STRING_LITERAL .)
+    NOT_EQUAL       reduce using rule 87 (valor -> STRING_LITERAL .)
+    LESS            reduce using rule 87 (valor -> STRING_LITERAL .)
+    GREATER         reduce using rule 87 (valor -> STRING_LITERAL .)
+    LESS_EQUAL      reduce using rule 87 (valor -> STRING_LITERAL .)
+    GREATER_EQUAL   reduce using rule 87 (valor -> STRING_LITERAL .)
+    PLUS            reduce using rule 87 (valor -> STRING_LITERAL .)
+    MINUS           reduce using rule 87 (valor -> STRING_LITERAL .)
+    AND             reduce using rule 87 (valor -> STRING_LITERAL .)
+    OR              reduce using rule 87 (valor -> STRING_LITERAL .)
+    COMMA           reduce using rule 87 (valor -> STRING_LITERAL .)
+    RPAREN          reduce using rule 87 (valor -> STRING_LITERAL .)
+    REQUIRED        reduce using rule 87 (valor -> STRING_LITERAL .)
+    UNIQUE          reduce using rule 87 (valor -> STRING_LITERAL .)
+    MAIN            reduce using rule 87 (valor -> STRING_LITERAL .)
+    EXTERNAL        reduce using rule 87 (valor -> STRING_LITERAL .)
+    DEFAULT         reduce using rule 87 (valor -> STRING_LITERAL .)
+    SALTO_LINEA     reduce using rule 87 (valor -> STRING_LITERAL .)
+    DEDENT          reduce using rule 87 (valor -> STRING_LITERAL .)
+
+
+state 67
+
+    (88) valor -> NUMBER_INT .
+
+    TIMES           reduce using rule 88 (valor -> NUMBER_INT .)
+    DIVIDE          reduce using rule 88 (valor -> NUMBER_INT .)
+    MODULO          reduce using rule 88 (valor -> NUMBER_INT .)
+    ASSIGN          reduce using rule 88 (valor -> NUMBER_INT .)
+    NOT_EQUAL       reduce using rule 88 (valor -> NUMBER_INT .)
+    LESS            reduce using rule 88 (valor -> NUMBER_INT .)
+    GREATER         reduce using rule 88 (valor -> NUMBER_INT .)
+    LESS_EQUAL      reduce using rule 88 (valor -> NUMBER_INT .)
+    GREATER_EQUAL   reduce using rule 88 (valor -> NUMBER_INT .)
+    PLUS            reduce using rule 88 (valor -> NUMBER_INT .)
+    MINUS           reduce using rule 88 (valor -> NUMBER_INT .)
+    AND             reduce using rule 88 (valor -> NUMBER_INT .)
+    OR              reduce using rule 88 (valor -> NUMBER_INT .)
+    COMMA           reduce using rule 88 (valor -> NUMBER_INT .)
+    RPAREN          reduce using rule 88 (valor -> NUMBER_INT .)
+    REQUIRED        reduce using rule 88 (valor -> NUMBER_INT .)
+    UNIQUE          reduce using rule 88 (valor -> NUMBER_INT .)
+    MAIN            reduce using rule 88 (valor -> NUMBER_INT .)
+    EXTERNAL        reduce using rule 88 (valor -> NUMBER_INT .)
+    DEFAULT         reduce using rule 88 (valor -> NUMBER_INT .)
+    SALTO_LINEA     reduce using rule 88 (valor -> NUMBER_INT .)
+    DEDENT          reduce using rule 88 (valor -> NUMBER_INT .)
+
+
+state 68
+
+    (89) valor -> NUMBER_DECIMAL .
+
+    TIMES           reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    DIVIDE          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    MODULO          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    ASSIGN          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    NOT_EQUAL       reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    LESS            reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    GREATER         reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    LESS_EQUAL      reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    GREATER_EQUAL   reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    PLUS            reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    MINUS           reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    AND             reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    OR              reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    COMMA           reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    RPAREN          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    REQUIRED        reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    UNIQUE          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    MAIN            reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    EXTERNAL        reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    DEFAULT         reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    SALTO_LINEA     reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+    DEDENT          reduce using rule 89 (valor -> NUMBER_DECIMAL .)
+
+
+state 69
+
+    (90) valor -> DATE_LITERAL .
+
+    TIMES           reduce using rule 90 (valor -> DATE_LITERAL .)
+    DIVIDE          reduce using rule 90 (valor -> DATE_LITERAL .)
+    MODULO          reduce using rule 90 (valor -> DATE_LITERAL .)
+    ASSIGN          reduce using rule 90 (valor -> DATE_LITERAL .)
+    NOT_EQUAL       reduce using rule 90 (valor -> DATE_LITERAL .)
+    LESS            reduce using rule 90 (valor -> DATE_LITERAL .)
+    GREATER         reduce using rule 90 (valor -> DATE_LITERAL .)
+    LESS_EQUAL      reduce using rule 90 (valor -> DATE_LITERAL .)
+    GREATER_EQUAL   reduce using rule 90 (valor -> DATE_LITERAL .)
+    PLUS            reduce using rule 90 (valor -> DATE_LITERAL .)
+    MINUS           reduce using rule 90 (valor -> DATE_LITERAL .)
+    AND             reduce using rule 90 (valor -> DATE_LITERAL .)
+    OR              reduce using rule 90 (valor -> DATE_LITERAL .)
+    COMMA           reduce using rule 90 (valor -> DATE_LITERAL .)
+    RPAREN          reduce using rule 90 (valor -> DATE_LITERAL .)
+    REQUIRED        reduce using rule 90 (valor -> DATE_LITERAL .)
+    UNIQUE          reduce using rule 90 (valor -> DATE_LITERAL .)
+    MAIN            reduce using rule 90 (valor -> DATE_LITERAL .)
+    EXTERNAL        reduce using rule 90 (valor -> DATE_LITERAL .)
+    DEFAULT         reduce using rule 90 (valor -> DATE_LITERAL .)
+    SALTO_LINEA     reduce using rule 90 (valor -> DATE_LITERAL .)
+    DEDENT          reduce using rule 90 (valor -> DATE_LITERAL .)
+
+
+state 70
+
+    (91) valor -> TRUE .
+
+    TIMES           reduce using rule 91 (valor -> TRUE .)
+    DIVIDE          reduce using rule 91 (valor -> TRUE .)
+    MODULO          reduce using rule 91 (valor -> TRUE .)
+    ASSIGN          reduce using rule 91 (valor -> TRUE .)
+    NOT_EQUAL       reduce using rule 91 (valor -> TRUE .)
+    LESS            reduce using rule 91 (valor -> TRUE .)
+    GREATER         reduce using rule 91 (valor -> TRUE .)
+    LESS_EQUAL      reduce using rule 91 (valor -> TRUE .)
+    GREATER_EQUAL   reduce using rule 91 (valor -> TRUE .)
+    PLUS            reduce using rule 91 (valor -> TRUE .)
+    MINUS           reduce using rule 91 (valor -> TRUE .)
+    AND             reduce using rule 91 (valor -> TRUE .)
+    OR              reduce using rule 91 (valor -> TRUE .)
+    COMMA           reduce using rule 91 (valor -> TRUE .)
+    RPAREN          reduce using rule 91 (valor -> TRUE .)
+    REQUIRED        reduce using rule 91 (valor -> TRUE .)
+    UNIQUE          reduce using rule 91 (valor -> TRUE .)
+    MAIN            reduce using rule 91 (valor -> TRUE .)
+    EXTERNAL        reduce using rule 91 (valor -> TRUE .)
+    DEFAULT         reduce using rule 91 (valor -> TRUE .)
+    SALTO_LINEA     reduce using rule 91 (valor -> TRUE .)
+    DEDENT          reduce using rule 91 (valor -> TRUE .)
+
+
+state 71
+
+    (92) valor -> FALSE .
+
+    TIMES           reduce using rule 92 (valor -> FALSE .)
+    DIVIDE          reduce using rule 92 (valor -> FALSE .)
+    MODULO          reduce using rule 92 (valor -> FALSE .)
+    ASSIGN          reduce using rule 92 (valor -> FALSE .)
+    NOT_EQUAL       reduce using rule 92 (valor -> FALSE .)
+    LESS            reduce using rule 92 (valor -> FALSE .)
+    GREATER         reduce using rule 92 (valor -> FALSE .)
+    LESS_EQUAL      reduce using rule 92 (valor -> FALSE .)
+    GREATER_EQUAL   reduce using rule 92 (valor -> FALSE .)
+    PLUS            reduce using rule 92 (valor -> FALSE .)
+    MINUS           reduce using rule 92 (valor -> FALSE .)
+    AND             reduce using rule 92 (valor -> FALSE .)
+    OR              reduce using rule 92 (valor -> FALSE .)
+    COMMA           reduce using rule 92 (valor -> FALSE .)
+    RPAREN          reduce using rule 92 (valor -> FALSE .)
+    REQUIRED        reduce using rule 92 (valor -> FALSE .)
+    UNIQUE          reduce using rule 92 (valor -> FALSE .)
+    MAIN            reduce using rule 92 (valor -> FALSE .)
+    EXTERNAL        reduce using rule 92 (valor -> FALSE .)
+    DEFAULT         reduce using rule 92 (valor -> FALSE .)
+    SALTO_LINEA     reduce using rule 92 (valor -> FALSE .)
+    DEDENT          reduce using rule 92 (valor -> FALSE .)
+
+
+state 72
+
+    (93) valor -> EMPTY .
+
+    TIMES           reduce using rule 93 (valor -> EMPTY .)
+    DIVIDE          reduce using rule 93 (valor -> EMPTY .)
+    MODULO          reduce using rule 93 (valor -> EMPTY .)
+    ASSIGN          reduce using rule 93 (valor -> EMPTY .)
+    NOT_EQUAL       reduce using rule 93 (valor -> EMPTY .)
+    LESS            reduce using rule 93 (valor -> EMPTY .)
+    GREATER         reduce using rule 93 (valor -> EMPTY .)
+    LESS_EQUAL      reduce using rule 93 (valor -> EMPTY .)
+    GREATER_EQUAL   reduce using rule 93 (valor -> EMPTY .)
+    PLUS            reduce using rule 93 (valor -> EMPTY .)
+    MINUS           reduce using rule 93 (valor -> EMPTY .)
+    AND             reduce using rule 93 (valor -> EMPTY .)
+    OR              reduce using rule 93 (valor -> EMPTY .)
+    COMMA           reduce using rule 93 (valor -> EMPTY .)
+    RPAREN          reduce using rule 93 (valor -> EMPTY .)
+    REQUIRED        reduce using rule 93 (valor -> EMPTY .)
+    UNIQUE          reduce using rule 93 (valor -> EMPTY .)
+    MAIN            reduce using rule 93 (valor -> EMPTY .)
+    EXTERNAL        reduce using rule 93 (valor -> EMPTY .)
+    DEFAULT         reduce using rule 93 (valor -> EMPTY .)
+    SALTO_LINEA     reduce using rule 93 (valor -> EMPTY .)
+    DEDENT          reduce using rule 93 (valor -> EMPTY .)
+
+
+state 73
+
+    (94) valor -> IDENTIFIER .
+
+    TIMES           reduce using rule 94 (valor -> IDENTIFIER .)
+    DIVIDE          reduce using rule 94 (valor -> IDENTIFIER .)
+    MODULO          reduce using rule 94 (valor -> IDENTIFIER .)
+    ASSIGN          reduce using rule 94 (valor -> IDENTIFIER .)
+    NOT_EQUAL       reduce using rule 94 (valor -> IDENTIFIER .)
+    LESS            reduce using rule 94 (valor -> IDENTIFIER .)
+    GREATER         reduce using rule 94 (valor -> IDENTIFIER .)
+    LESS_EQUAL      reduce using rule 94 (valor -> IDENTIFIER .)
+    GREATER_EQUAL   reduce using rule 94 (valor -> IDENTIFIER .)
+    PLUS            reduce using rule 94 (valor -> IDENTIFIER .)
+    MINUS           reduce using rule 94 (valor -> IDENTIFIER .)
+    AND             reduce using rule 94 (valor -> IDENTIFIER .)
+    OR              reduce using rule 94 (valor -> IDENTIFIER .)
+    COMMA           reduce using rule 94 (valor -> IDENTIFIER .)
+    RPAREN          reduce using rule 94 (valor -> IDENTIFIER .)
+    REQUIRED        reduce using rule 94 (valor -> IDENTIFIER .)
+    UNIQUE          reduce using rule 94 (valor -> IDENTIFIER .)
+    MAIN            reduce using rule 94 (valor -> IDENTIFIER .)
+    EXTERNAL        reduce using rule 94 (valor -> IDENTIFIER .)
+    DEFAULT         reduce using rule 94 (valor -> IDENTIFIER .)
+    SALTO_LINEA     reduce using rule 94 (valor -> IDENTIFIER .)
+    DEDENT          reduce using rule 94 (valor -> IDENTIFIER .)
+
+
+state 74
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos . DEDENT
+
+    DEDENT          shift and go to state 100
+
+
+state 75
+
+    (12) lista_campos -> SALTO_LINEA lista_campos .
+
+    DEDENT          reduce using rule 12 (lista_campos -> SALTO_LINEA lista_campos .)
+
+
+state 76
+
+    (10) declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .
+
+    SALTO_LINEA     reduce using rule 10 (declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .)
+    error           reduce using rule 10 (declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .)
+    MODEL           reduce using rule 10 (declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .)
+    IDENTIFIER      reduce using rule 10 (declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .)
+    $end            reduce using rule 10 (declaracion_modelo -> MODEL error SALTO_LINEA INDENT lista_campos DEDENT .)
+
+
+state 77
+
+    (11) lista_campos -> campo SALTO_LINEA . lista_campos
+    (13) lista_campos -> campo SALTO_LINEA .
+    (11) lista_campos -> . campo SALTO_LINEA lista_campos
+    (12) lista_campos -> . SALTO_LINEA lista_campos
+    (13) lista_campos -> . campo SALTO_LINEA
+    (14) lista_campos -> . campo
+    (15) lista_campos -> . SALTO_LINEA
+    (16) campo -> . IDENTIFIER COLON tipo_dato restricciones_opt
+
+    DEDENT          reduce using rule 13 (lista_campos -> campo SALTO_LINEA .)
+    SALTO_LINEA     shift and go to state 45
+    IDENTIFIER      shift and go to state 48
+
+    campo                          shift and go to state 47
+    lista_campos                   shift and go to state 101
+
+state 78
+
+    (16) campo -> IDENTIFIER COLON . tipo_dato restricciones_opt
+    (17) tipo_dato -> . STRING
+    (18) tipo_dato -> . AUTO
+    (19) tipo_dato -> . NUM
+    (20) tipo_dato -> . TEXT
+    (21) tipo_dato -> . BOOL
+    (22) tipo_dato -> . DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN
+
+    STRING          shift and go to state 103
+    AUTO            shift and go to state 104
+    NUM             shift and go to state 105
+    TEXT            shift and go to state 106
+    BOOL            shift and go to state 107
+    DECIMAL         shift and go to state 108
+
+    tipo_dato                      shift and go to state 102
+
+state 79
+
+    (82) factor -> LPAREN expresion . RPAREN
+
+    RPAREN          shift and go to state 109
+
+
+state 80
+
+    (33) llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .
+
+    DOT             reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+    SALTO_LINEA     reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+    error           reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+    MODEL           reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+    IDENTIFIER      reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+    $end            reduce using rule 33 (llamada_metodo -> metodo LPAREN argumentos_opt RPAREN .)
+
+
+state 81
+
+    (55) lista_argumentos -> parametro COMMA . lista_argumentos
+    (55) lista_argumentos -> . parametro COMMA lista_argumentos
+    (56) lista_argumentos -> . parametro
+    (57) parametro -> . expresion
+    (58) expresion -> . expresion_or
+    (59) expresion_or -> . expresion_or OR expresion_and
+    (60) expresion_or -> . expresion_and
+    (61) expresion_and -> . expresion_and AND expresion_not
+    (62) expresion_and -> . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    parametro                      shift and go to state 52
+    lista_argumentos               shift and go to state 110
+    expresion                      shift and go to state 53
+    expresion_or                   shift and go to state 54
+    expresion_and                  shift and go to state 55
+    expresion_not                  shift and go to state 56
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 82
+
+    (59) expresion_or -> expresion_or OR . expresion_and
+    (61) expresion_and -> . expresion_and AND expresion_not
+    (62) expresion_and -> . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    expresion_and                  shift and go to state 111
+    expresion_not                  shift and go to state 56
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 83
+
+    (61) expresion_and -> expresion_and AND . expresion_not
+    (63) expresion_not -> . NOT expresion_not
+    (64) expresion_not -> . expresion_relacional
+    (65) expresion_relacional -> . expresion_aritmetica op_relacional expresion_aritmetica
+    (66) expresion_relacional -> . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    NOT             shift and go to state 57
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    expresion_not                  shift and go to state 112
+    expresion_relacional           shift and go to state 58
+    expresion_aritmetica           shift and go to state 59
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 84
+
+    (63) expresion_not -> NOT expresion_not .
+
+    AND             reduce using rule 63 (expresion_not -> NOT expresion_not .)
+    OR              reduce using rule 63 (expresion_not -> NOT expresion_not .)
+    COMMA           reduce using rule 63 (expresion_not -> NOT expresion_not .)
+    RPAREN          reduce using rule 63 (expresion_not -> NOT expresion_not .)
+
+
+state 85
+
+    (65) expresion_relacional -> expresion_aritmetica op_relacional . expresion_aritmetica
+    (73) expresion_aritmetica -> . expresion_aritmetica op_suma_resta termino
+    (74) expresion_aritmetica -> . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    expresion_aritmetica           shift and go to state 113
+    termino                        shift and go to state 60
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 86
+
+    (73) expresion_aritmetica -> expresion_aritmetica op_suma_resta . termino
+    (77) termino -> . termino op_mult_div_mod factor
+    (78) termino -> . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    termino                        shift and go to state 114
+    factor                         shift and go to state 61
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 87
+
+    (67) op_relacional -> ASSIGN .
+
+    LPAREN          reduce using rule 67 (op_relacional -> ASSIGN .)
+    PLUS            reduce using rule 67 (op_relacional -> ASSIGN .)
+    MINUS           reduce using rule 67 (op_relacional -> ASSIGN .)
+    STRING_LITERAL  reduce using rule 67 (op_relacional -> ASSIGN .)
+    NUMBER_INT      reduce using rule 67 (op_relacional -> ASSIGN .)
+    NUMBER_DECIMAL  reduce using rule 67 (op_relacional -> ASSIGN .)
+    DATE_LITERAL    reduce using rule 67 (op_relacional -> ASSIGN .)
+    TRUE            reduce using rule 67 (op_relacional -> ASSIGN .)
+    FALSE           reduce using rule 67 (op_relacional -> ASSIGN .)
+    EMPTY           reduce using rule 67 (op_relacional -> ASSIGN .)
+    IDENTIFIER      reduce using rule 67 (op_relacional -> ASSIGN .)
+
+
+state 88
+
+    (68) op_relacional -> NOT_EQUAL .
+
+    LPAREN          reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    PLUS            reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    MINUS           reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    STRING_LITERAL  reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    NUMBER_INT      reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    NUMBER_DECIMAL  reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    DATE_LITERAL    reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    TRUE            reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    FALSE           reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    EMPTY           reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+    IDENTIFIER      reduce using rule 68 (op_relacional -> NOT_EQUAL .)
+
+
+state 89
+
+    (69) op_relacional -> LESS .
+
+    LPAREN          reduce using rule 69 (op_relacional -> LESS .)
+    PLUS            reduce using rule 69 (op_relacional -> LESS .)
+    MINUS           reduce using rule 69 (op_relacional -> LESS .)
+    STRING_LITERAL  reduce using rule 69 (op_relacional -> LESS .)
+    NUMBER_INT      reduce using rule 69 (op_relacional -> LESS .)
+    NUMBER_DECIMAL  reduce using rule 69 (op_relacional -> LESS .)
+    DATE_LITERAL    reduce using rule 69 (op_relacional -> LESS .)
+    TRUE            reduce using rule 69 (op_relacional -> LESS .)
+    FALSE           reduce using rule 69 (op_relacional -> LESS .)
+    EMPTY           reduce using rule 69 (op_relacional -> LESS .)
+    IDENTIFIER      reduce using rule 69 (op_relacional -> LESS .)
+
+
+state 90
+
+    (70) op_relacional -> GREATER .
+
+    LPAREN          reduce using rule 70 (op_relacional -> GREATER .)
+    PLUS            reduce using rule 70 (op_relacional -> GREATER .)
+    MINUS           reduce using rule 70 (op_relacional -> GREATER .)
+    STRING_LITERAL  reduce using rule 70 (op_relacional -> GREATER .)
+    NUMBER_INT      reduce using rule 70 (op_relacional -> GREATER .)
+    NUMBER_DECIMAL  reduce using rule 70 (op_relacional -> GREATER .)
+    DATE_LITERAL    reduce using rule 70 (op_relacional -> GREATER .)
+    TRUE            reduce using rule 70 (op_relacional -> GREATER .)
+    FALSE           reduce using rule 70 (op_relacional -> GREATER .)
+    EMPTY           reduce using rule 70 (op_relacional -> GREATER .)
+    IDENTIFIER      reduce using rule 70 (op_relacional -> GREATER .)
+
+
+state 91
+
+    (71) op_relacional -> LESS_EQUAL .
+
+    LPAREN          reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    PLUS            reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    MINUS           reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    STRING_LITERAL  reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    NUMBER_INT      reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    NUMBER_DECIMAL  reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    DATE_LITERAL    reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    TRUE            reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    FALSE           reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    EMPTY           reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+    IDENTIFIER      reduce using rule 71 (op_relacional -> LESS_EQUAL .)
+
+
+state 92
+
+    (72) op_relacional -> GREATER_EQUAL .
+
+    LPAREN          reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    PLUS            reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    MINUS           reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    STRING_LITERAL  reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    NUMBER_INT      reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    NUMBER_DECIMAL  reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    DATE_LITERAL    reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    TRUE            reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    FALSE           reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    EMPTY           reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+    IDENTIFIER      reduce using rule 72 (op_relacional -> GREATER_EQUAL .)
+
+
+state 93
+
+    (75) op_suma_resta -> PLUS .
+
+    LPAREN          reduce using rule 75 (op_suma_resta -> PLUS .)
+    PLUS            reduce using rule 75 (op_suma_resta -> PLUS .)
+    MINUS           reduce using rule 75 (op_suma_resta -> PLUS .)
+    STRING_LITERAL  reduce using rule 75 (op_suma_resta -> PLUS .)
+    NUMBER_INT      reduce using rule 75 (op_suma_resta -> PLUS .)
+    NUMBER_DECIMAL  reduce using rule 75 (op_suma_resta -> PLUS .)
+    DATE_LITERAL    reduce using rule 75 (op_suma_resta -> PLUS .)
+    TRUE            reduce using rule 75 (op_suma_resta -> PLUS .)
+    FALSE           reduce using rule 75 (op_suma_resta -> PLUS .)
+    EMPTY           reduce using rule 75 (op_suma_resta -> PLUS .)
+    IDENTIFIER      reduce using rule 75 (op_suma_resta -> PLUS .)
+
+
+state 94
+
+    (76) op_suma_resta -> MINUS .
+
+    LPAREN          reduce using rule 76 (op_suma_resta -> MINUS .)
+    PLUS            reduce using rule 76 (op_suma_resta -> MINUS .)
+    MINUS           reduce using rule 76 (op_suma_resta -> MINUS .)
+    STRING_LITERAL  reduce using rule 76 (op_suma_resta -> MINUS .)
+    NUMBER_INT      reduce using rule 76 (op_suma_resta -> MINUS .)
+    NUMBER_DECIMAL  reduce using rule 76 (op_suma_resta -> MINUS .)
+    DATE_LITERAL    reduce using rule 76 (op_suma_resta -> MINUS .)
+    TRUE            reduce using rule 76 (op_suma_resta -> MINUS .)
+    FALSE           reduce using rule 76 (op_suma_resta -> MINUS .)
+    EMPTY           reduce using rule 76 (op_suma_resta -> MINUS .)
+    IDENTIFIER      reduce using rule 76 (op_suma_resta -> MINUS .)
+
+
+state 95
+
+    (77) termino -> termino op_mult_div_mod . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    factor                         shift and go to state 115
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 96
+
+    (79) op_mult_div_mod -> TIMES .
+
+    LPAREN          reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    PLUS            reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    MINUS           reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    STRING_LITERAL  reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    NUMBER_INT      reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    NUMBER_DECIMAL  reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    DATE_LITERAL    reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    TRUE            reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    FALSE           reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    EMPTY           reduce using rule 79 (op_mult_div_mod -> TIMES .)
+    IDENTIFIER      reduce using rule 79 (op_mult_div_mod -> TIMES .)
+
+
+state 97
+
+    (80) op_mult_div_mod -> DIVIDE .
+
+    LPAREN          reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    PLUS            reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    MINUS           reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    STRING_LITERAL  reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    NUMBER_INT      reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    NUMBER_DECIMAL  reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    DATE_LITERAL    reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    TRUE            reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    FALSE           reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    EMPTY           reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+    IDENTIFIER      reduce using rule 80 (op_mult_div_mod -> DIVIDE .)
+
+
+state 98
+
+    (81) op_mult_div_mod -> MODULO .
+
+    LPAREN          reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    PLUS            reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    MINUS           reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    STRING_LITERAL  reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    NUMBER_INT      reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    NUMBER_DECIMAL  reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    DATE_LITERAL    reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    TRUE            reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    FALSE           reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    EMPTY           reduce using rule 81 (op_mult_div_mod -> MODULO .)
+    IDENTIFIER      reduce using rule 81 (op_mult_div_mod -> MODULO .)
+
+
+state 99
+
+    (83) factor -> op_unario factor .
+
+    TIMES           reduce using rule 83 (factor -> op_unario factor .)
+    DIVIDE          reduce using rule 83 (factor -> op_unario factor .)
+    MODULO          reduce using rule 83 (factor -> op_unario factor .)
+    ASSIGN          reduce using rule 83 (factor -> op_unario factor .)
+    NOT_EQUAL       reduce using rule 83 (factor -> op_unario factor .)
+    LESS            reduce using rule 83 (factor -> op_unario factor .)
+    GREATER         reduce using rule 83 (factor -> op_unario factor .)
+    LESS_EQUAL      reduce using rule 83 (factor -> op_unario factor .)
+    GREATER_EQUAL   reduce using rule 83 (factor -> op_unario factor .)
+    PLUS            reduce using rule 83 (factor -> op_unario factor .)
+    MINUS           reduce using rule 83 (factor -> op_unario factor .)
+    AND             reduce using rule 83 (factor -> op_unario factor .)
+    OR              reduce using rule 83 (factor -> op_unario factor .)
+    COMMA           reduce using rule 83 (factor -> op_unario factor .)
+    RPAREN          reduce using rule 83 (factor -> op_unario factor .)
+    REQUIRED        reduce using rule 83 (factor -> op_unario factor .)
+    UNIQUE          reduce using rule 83 (factor -> op_unario factor .)
+    MAIN            reduce using rule 83 (factor -> op_unario factor .)
+    EXTERNAL        reduce using rule 83 (factor -> op_unario factor .)
+    DEFAULT         reduce using rule 83 (factor -> op_unario factor .)
+    SALTO_LINEA     reduce using rule 83 (factor -> op_unario factor .)
+    DEDENT          reduce using rule 83 (factor -> op_unario factor .)
+
+
+state 100
+
+    (9) declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .
+
+    SALTO_LINEA     reduce using rule 9 (declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .)
+    error           reduce using rule 9 (declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .)
+    MODEL           reduce using rule 9 (declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .)
+    IDENTIFIER      reduce using rule 9 (declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .)
+    $end            reduce using rule 9 (declaracion_modelo -> MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT .)
+
+
+state 101
+
+    (11) lista_campos -> campo SALTO_LINEA lista_campos .
+
+    DEDENT          reduce using rule 11 (lista_campos -> campo SALTO_LINEA lista_campos .)
+
+
+state 102
+
+    (16) campo -> IDENTIFIER COLON tipo_dato . restricciones_opt
+    (23) restricciones_opt -> . restriccion restricciones_opt
+    (24) restricciones_opt -> .
+    (25) restriccion -> . REQUIRED
+    (26) restriccion -> . UNIQUE
+    (27) restriccion -> . MAIN KEY
+    (28) restriccion -> . EXTERNAL KEY
+    (29) restriccion -> . DEFAULT ASSIGN factor
+
+    SALTO_LINEA     reduce using rule 24 (restricciones_opt -> .)
+    DEDENT          reduce using rule 24 (restricciones_opt -> .)
+    REQUIRED        shift and go to state 118
+    UNIQUE          shift and go to state 119
+    MAIN            shift and go to state 120
+    EXTERNAL        shift and go to state 121
+    DEFAULT         shift and go to state 122
+
+    restricciones_opt              shift and go to state 116
+    restriccion                    shift and go to state 117
+
+state 103
+
+    (17) tipo_dato -> STRING .
+
+    REQUIRED        reduce using rule 17 (tipo_dato -> STRING .)
+    UNIQUE          reduce using rule 17 (tipo_dato -> STRING .)
+    MAIN            reduce using rule 17 (tipo_dato -> STRING .)
+    EXTERNAL        reduce using rule 17 (tipo_dato -> STRING .)
+    DEFAULT         reduce using rule 17 (tipo_dato -> STRING .)
+    SALTO_LINEA     reduce using rule 17 (tipo_dato -> STRING .)
+    DEDENT          reduce using rule 17 (tipo_dato -> STRING .)
+
+
+state 104
+
+    (18) tipo_dato -> AUTO .
+
+    REQUIRED        reduce using rule 18 (tipo_dato -> AUTO .)
+    UNIQUE          reduce using rule 18 (tipo_dato -> AUTO .)
+    MAIN            reduce using rule 18 (tipo_dato -> AUTO .)
+    EXTERNAL        reduce using rule 18 (tipo_dato -> AUTO .)
+    DEFAULT         reduce using rule 18 (tipo_dato -> AUTO .)
+    SALTO_LINEA     reduce using rule 18 (tipo_dato -> AUTO .)
+    DEDENT          reduce using rule 18 (tipo_dato -> AUTO .)
+
+
+state 105
+
+    (19) tipo_dato -> NUM .
+
+    REQUIRED        reduce using rule 19 (tipo_dato -> NUM .)
+    UNIQUE          reduce using rule 19 (tipo_dato -> NUM .)
+    MAIN            reduce using rule 19 (tipo_dato -> NUM .)
+    EXTERNAL        reduce using rule 19 (tipo_dato -> NUM .)
+    DEFAULT         reduce using rule 19 (tipo_dato -> NUM .)
+    SALTO_LINEA     reduce using rule 19 (tipo_dato -> NUM .)
+    DEDENT          reduce using rule 19 (tipo_dato -> NUM .)
+
+
+state 106
+
+    (20) tipo_dato -> TEXT .
+
+    REQUIRED        reduce using rule 20 (tipo_dato -> TEXT .)
+    UNIQUE          reduce using rule 20 (tipo_dato -> TEXT .)
+    MAIN            reduce using rule 20 (tipo_dato -> TEXT .)
+    EXTERNAL        reduce using rule 20 (tipo_dato -> TEXT .)
+    DEFAULT         reduce using rule 20 (tipo_dato -> TEXT .)
+    SALTO_LINEA     reduce using rule 20 (tipo_dato -> TEXT .)
+    DEDENT          reduce using rule 20 (tipo_dato -> TEXT .)
+
+
+state 107
+
+    (21) tipo_dato -> BOOL .
+
+    REQUIRED        reduce using rule 21 (tipo_dato -> BOOL .)
+    UNIQUE          reduce using rule 21 (tipo_dato -> BOOL .)
+    MAIN            reduce using rule 21 (tipo_dato -> BOOL .)
+    EXTERNAL        reduce using rule 21 (tipo_dato -> BOOL .)
+    DEFAULT         reduce using rule 21 (tipo_dato -> BOOL .)
+    SALTO_LINEA     reduce using rule 21 (tipo_dato -> BOOL .)
+    DEDENT          reduce using rule 21 (tipo_dato -> BOOL .)
+
+
+state 108
+
+    (22) tipo_dato -> DECIMAL . LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN
+
+    LPAREN          shift and go to state 123
+
+
+state 109
+
+    (82) factor -> LPAREN expresion RPAREN .
+
+    TIMES           reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    DIVIDE          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    MODULO          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    ASSIGN          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    NOT_EQUAL       reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    LESS            reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    GREATER         reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    LESS_EQUAL      reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    GREATER_EQUAL   reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    PLUS            reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    MINUS           reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    AND             reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    OR              reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    COMMA           reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    RPAREN          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    REQUIRED        reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    UNIQUE          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    MAIN            reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    EXTERNAL        reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    DEFAULT         reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    SALTO_LINEA     reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+    DEDENT          reduce using rule 82 (factor -> LPAREN expresion RPAREN .)
+
+
+state 110
+
+    (55) lista_argumentos -> parametro COMMA lista_argumentos .
+
+    RPAREN          reduce using rule 55 (lista_argumentos -> parametro COMMA lista_argumentos .)
+
+
+state 111
+
+    (59) expresion_or -> expresion_or OR expresion_and .
+    (61) expresion_and -> expresion_and . AND expresion_not
+
+    OR              reduce using rule 59 (expresion_or -> expresion_or OR expresion_and .)
+    COMMA           reduce using rule 59 (expresion_or -> expresion_or OR expresion_and .)
+    RPAREN          reduce using rule 59 (expresion_or -> expresion_or OR expresion_and .)
+    AND             shift and go to state 83
+
+
+state 112
+
+    (61) expresion_and -> expresion_and AND expresion_not .
+
+    AND             reduce using rule 61 (expresion_and -> expresion_and AND expresion_not .)
+    OR              reduce using rule 61 (expresion_and -> expresion_and AND expresion_not .)
+    COMMA           reduce using rule 61 (expresion_and -> expresion_and AND expresion_not .)
+    RPAREN          reduce using rule 61 (expresion_and -> expresion_and AND expresion_not .)
+
+
+state 113
+
+    (65) expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica .
+    (73) expresion_aritmetica -> expresion_aritmetica . op_suma_resta termino
+    (75) op_suma_resta -> . PLUS
+    (76) op_suma_resta -> . MINUS
+
+    AND             reduce using rule 65 (expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica .)
+    OR              reduce using rule 65 (expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica .)
+    COMMA           reduce using rule 65 (expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica .)
+    RPAREN          reduce using rule 65 (expresion_relacional -> expresion_aritmetica op_relacional expresion_aritmetica .)
+    PLUS            shift and go to state 93
+    MINUS           shift and go to state 94
+
+    op_suma_resta                  shift and go to state 86
+
+state 114
+
+    (73) expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .
+    (77) termino -> termino . op_mult_div_mod factor
+    (79) op_mult_div_mod -> . TIMES
+    (80) op_mult_div_mod -> . DIVIDE
+    (81) op_mult_div_mod -> . MODULO
+
+    ASSIGN          reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    NOT_EQUAL       reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    LESS            reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    GREATER         reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    LESS_EQUAL      reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    GREATER_EQUAL   reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    PLUS            reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    MINUS           reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    AND             reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    OR              reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    COMMA           reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    RPAREN          reduce using rule 73 (expresion_aritmetica -> expresion_aritmetica op_suma_resta termino .)
+    TIMES           shift and go to state 96
+    DIVIDE          shift and go to state 97
+    MODULO          shift and go to state 98
+
+    op_mult_div_mod                shift and go to state 95
+
+state 115
+
+    (77) termino -> termino op_mult_div_mod factor .
+
+    TIMES           reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    DIVIDE          reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    MODULO          reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    ASSIGN          reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    NOT_EQUAL       reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    LESS            reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    GREATER         reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    LESS_EQUAL      reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    GREATER_EQUAL   reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    PLUS            reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    MINUS           reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    AND             reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    OR              reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    COMMA           reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+    RPAREN          reduce using rule 77 (termino -> termino op_mult_div_mod factor .)
+
+
+state 116
+
+    (16) campo -> IDENTIFIER COLON tipo_dato restricciones_opt .
+
+    SALTO_LINEA     reduce using rule 16 (campo -> IDENTIFIER COLON tipo_dato restricciones_opt .)
+    DEDENT          reduce using rule 16 (campo -> IDENTIFIER COLON tipo_dato restricciones_opt .)
+
+
+state 117
+
+    (23) restricciones_opt -> restriccion . restricciones_opt
+    (23) restricciones_opt -> . restriccion restricciones_opt
+    (24) restricciones_opt -> .
+    (25) restriccion -> . REQUIRED
+    (26) restriccion -> . UNIQUE
+    (27) restriccion -> . MAIN KEY
+    (28) restriccion -> . EXTERNAL KEY
+    (29) restriccion -> . DEFAULT ASSIGN factor
+
+    SALTO_LINEA     reduce using rule 24 (restricciones_opt -> .)
+    DEDENT          reduce using rule 24 (restricciones_opt -> .)
+    REQUIRED        shift and go to state 118
+    UNIQUE          shift and go to state 119
+    MAIN            shift and go to state 120
+    EXTERNAL        shift and go to state 121
+    DEFAULT         shift and go to state 122
+
+    restriccion                    shift and go to state 117
+    restricciones_opt              shift and go to state 124
+
+state 118
+
+    (25) restriccion -> REQUIRED .
+
+    REQUIRED        reduce using rule 25 (restriccion -> REQUIRED .)
+    UNIQUE          reduce using rule 25 (restriccion -> REQUIRED .)
+    MAIN            reduce using rule 25 (restriccion -> REQUIRED .)
+    EXTERNAL        reduce using rule 25 (restriccion -> REQUIRED .)
+    DEFAULT         reduce using rule 25 (restriccion -> REQUIRED .)
+    SALTO_LINEA     reduce using rule 25 (restriccion -> REQUIRED .)
+    DEDENT          reduce using rule 25 (restriccion -> REQUIRED .)
+
+
+state 119
+
+    (26) restriccion -> UNIQUE .
+
+    REQUIRED        reduce using rule 26 (restriccion -> UNIQUE .)
+    UNIQUE          reduce using rule 26 (restriccion -> UNIQUE .)
+    MAIN            reduce using rule 26 (restriccion -> UNIQUE .)
+    EXTERNAL        reduce using rule 26 (restriccion -> UNIQUE .)
+    DEFAULT         reduce using rule 26 (restriccion -> UNIQUE .)
+    SALTO_LINEA     reduce using rule 26 (restriccion -> UNIQUE .)
+    DEDENT          reduce using rule 26 (restriccion -> UNIQUE .)
+
+
+state 120
+
+    (27) restriccion -> MAIN . KEY
+
+    KEY             shift and go to state 125
+
+
+state 121
+
+    (28) restriccion -> EXTERNAL . KEY
+
+    KEY             shift and go to state 126
+
+
+state 122
+
+    (29) restriccion -> DEFAULT . ASSIGN factor
+
+    ASSIGN          shift and go to state 127
+
+
+state 123
+
+    (22) tipo_dato -> DECIMAL LPAREN . NUMBER_INT COMMA NUMBER_INT RPAREN
+
+    NUMBER_INT      shift and go to state 128
+
+
+state 124
+
+    (23) restricciones_opt -> restriccion restricciones_opt .
+
+    SALTO_LINEA     reduce using rule 23 (restricciones_opt -> restriccion restricciones_opt .)
+    DEDENT          reduce using rule 23 (restricciones_opt -> restriccion restricciones_opt .)
+
+
+state 125
+
+    (27) restriccion -> MAIN KEY .
+
+    REQUIRED        reduce using rule 27 (restriccion -> MAIN KEY .)
+    UNIQUE          reduce using rule 27 (restriccion -> MAIN KEY .)
+    MAIN            reduce using rule 27 (restriccion -> MAIN KEY .)
+    EXTERNAL        reduce using rule 27 (restriccion -> MAIN KEY .)
+    DEFAULT         reduce using rule 27 (restriccion -> MAIN KEY .)
+    SALTO_LINEA     reduce using rule 27 (restriccion -> MAIN KEY .)
+    DEDENT          reduce using rule 27 (restriccion -> MAIN KEY .)
+
+
+state 126
+
+    (28) restriccion -> EXTERNAL KEY .
+
+    REQUIRED        reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    UNIQUE          reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    MAIN            reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    EXTERNAL        reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    DEFAULT         reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    SALTO_LINEA     reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+    DEDENT          reduce using rule 28 (restriccion -> EXTERNAL KEY .)
+
+
+state 127
+
+    (29) restriccion -> DEFAULT ASSIGN . factor
+    (82) factor -> . LPAREN expresion RPAREN
+    (83) factor -> . op_unario factor
+    (84) factor -> . valor
+    (85) op_unario -> . PLUS
+    (86) op_unario -> . MINUS
+    (87) valor -> . STRING_LITERAL
+    (88) valor -> . NUMBER_INT
+    (89) valor -> . NUMBER_DECIMAL
+    (90) valor -> . DATE_LITERAL
+    (91) valor -> . TRUE
+    (92) valor -> . FALSE
+    (93) valor -> . EMPTY
+    (94) valor -> . IDENTIFIER
+
+    LPAREN          shift and go to state 49
+    PLUS            shift and go to state 64
+    MINUS           shift and go to state 65
+    STRING_LITERAL  shift and go to state 66
+    NUMBER_INT      shift and go to state 67
+    NUMBER_DECIMAL  shift and go to state 68
+    DATE_LITERAL    shift and go to state 69
+    TRUE            shift and go to state 70
+    FALSE           shift and go to state 71
+    EMPTY           shift and go to state 72
+    IDENTIFIER      shift and go to state 73
+
+    factor                         shift and go to state 129
+    op_unario                      shift and go to state 62
+    valor                          shift and go to state 63
+
+state 128
+
+    (22) tipo_dato -> DECIMAL LPAREN NUMBER_INT . COMMA NUMBER_INT RPAREN
+
+    COMMA           shift and go to state 130
+
+
+state 129
+
+    (29) restriccion -> DEFAULT ASSIGN factor .
+
+    REQUIRED        reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    UNIQUE          reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    MAIN            reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    EXTERNAL        reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    DEFAULT         reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    SALTO_LINEA     reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+    DEDENT          reduce using rule 29 (restriccion -> DEFAULT ASSIGN factor .)
+
+
+state 130
+
+    (22) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA . NUMBER_INT RPAREN
+
+    NUMBER_INT      shift and go to state 131
+
+
+state 131
+
+    (22) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT . RPAREN
+
+    RPAREN          shift and go to state 132
+
+
+state 132
+
+    (22) tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .
+
+    REQUIRED        reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    UNIQUE          reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    MAIN            reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    EXTERNAL        reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    DEFAULT         reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    SALTO_LINEA     reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+    DEDENT          reduce using rule 22 (tipo_dato -> DECIMAL LPAREN NUMBER_INT COMMA NUMBER_INT RPAREN .)
+
