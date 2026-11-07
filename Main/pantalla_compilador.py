@@ -8,6 +8,23 @@ from pathlib import Path
 import flet as ft
 import pyte
 from winpty import PtyProcess, WinptyError
+import contextlib
+import io
+from ast_nodes import (
+    BinaryOperation,
+    DbOperation,
+    Identifier,
+    Literal,
+    ModelDeclaration,
+    Parameter,
+    Program,
+    UnaryOperation,
+)
+from codegen import SQLCodeGenerator
+from db_executor import PostgresExecutor, load_db_config, save_db_config
+from lexer import errores_lexicos, lexer
+from parser import errores_sintacticos, parser
+from semantic import SemanticAnalyzer
 
 
 BACKGROUND = "#101722"
@@ -1669,6 +1686,380 @@ def iniciar_interfaz(page: ft.Page):
         on_vertical_drag_end=finalizar_redimension_terminal,
     )
 
+    def escribir_en_consola(texto: str):
+        normalizado = texto.replace("\r\n", "\n").replace("\n", "\r\n")
+        terminal_stream.feed(f"\r\n{normalizado}\r\n")
+        dibujar_terminal()
+
+    def resumir_expresion_ast(nodo) -> str:
+        if nodo is None:
+            return ""
+        if isinstance(nodo, Literal):
+            if nodo.literal_type.upper() == "STRING_LITERAL":
+                return f'"{nodo.value}"'
+            return str(nodo.value)
+        if isinstance(nodo, Identifier):
+            return nodo.name
+        if isinstance(nodo, Parameter):
+            return f"{nodo.name} = {resumir_expresion_ast(nodo.value)}"
+        if isinstance(nodo, UnaryOperation):
+            op = f"{nodo.operator} " if nodo.operator.upper() == "NOT" else nodo.operator
+            return f"{op}{resumir_expresion_ast(nodo.operand)}"
+        if isinstance(nodo, BinaryOperation):
+            return f"{resumir_expresion_ast(nodo.left)} {nodo.operator} {resumir_expresion_ast(nodo.right)}"
+        return str(nodo)
+
+    def actualizar_arbol_sintactico(ast_root: Program | None, errores_lista: list[str] | None = None):
+        nodos_ui = [
+            crear_fila_arbol("Programa", ft.Icons.ACCOUNT_TREE, 0, color="#55a8ff")
+        ]
+
+        if errores_lista:
+            nodos_ui.append(
+                crear_fila_arbol(
+                    f"Errores detectados ({len(errores_lista)})",
+                    ft.Icons.ERROR_OUTLINE,
+                    1,
+                    color="#ff7c84",
+                )
+            )
+            for err in errores_lista[:15]:
+                nodos_ui.append(
+                    crear_fila_arbol(err, ft.Icons.WARNING_AMBER, 2, color="#f0b45b")
+                )
+
+        if ast_root and getattr(ast_root, "statements", None):
+            for stmt in ast_root.statements:
+                if isinstance(stmt, ModelDeclaration):
+                    nodos_ui.append(
+                        crear_fila_arbol("Modelo", ft.Icons.DATA_OBJECT, 1, color="#c084fc")
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol(stmt.name, ft.Icons.TABLE_CHART, 2, color="#55a8ff")
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol("Atributos", ft.Icons.FOLDER, 3, color="#4ade80")
+                    )
+                    for campo in stmt.fields:
+                        args_str = (
+                            f"({', '.join(map(str, campo.data_type.args))})"
+                            if campo.data_type.args
+                            else ""
+                        )
+                        tipo_str = f"{campo.data_type.type_name.capitalize()}{args_str}"
+                        restr_list = []
+                        for c in campo.constraints:
+                            if c.value is not None:
+                                restr_list.append(
+                                    f"{c.constraint_type.lower()}={resumir_expresion_ast(c.value)}"
+                                )
+                            else:
+                                restr_list.append(c.constraint_type.lower())
+                        restr_str = f" [{', '.join(restr_list)}]" if restr_list else ""
+                        nodos_ui.append(
+                            crear_fila_arbol(
+                                f"{campo.name} : {tipo_str}{restr_str}",
+                                ft.Icons.CIRCLE,
+                                4,
+                                color="#57a9ff",
+                            )
+                        )
+                elif isinstance(stmt, DbOperation):
+                    cadena_resumen = ".".join(
+                        f"{call.method}({', '.join(resumir_expresion_ast(a) for a in (call.arguments or []))})"
+                        for call in stmt.calls
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol(
+                            f"{stmt.model_name}.{cadena_resumen}",
+                            ft.Icons.DATA_OBJECT,
+                            1,
+                            color="#c084fc",
+                        )
+                    )
+                    for call in stmt.calls:
+                        args_txt = ", ".join(
+                            resumir_expresion_ast(a) for a in (call.arguments or [])
+                        )
+                        nodos_ui.append(
+                            crear_fila_arbol(
+                                f".{call.method}({args_txt})",
+                                ft.Icons.SUBDIRECTORY_ARROW_RIGHT,
+                                2,
+                                color="#56d9e8",
+                            )
+                        )
+
+        syntax_tree.controls = nodos_ui
+        try:
+            syntax_tree.update()
+        except Exception:
+            pass
+
+    def ejecutar_pipeline_compilacion(mostrar_en_consola: bool = True):
+        sincronizar_documento_activo()
+        codigo_fuente = editor.value or ""
+        nombre_doc = (
+            active_path.name
+            if active_path is not None
+            else (active_document["name"] if active_document else "buffer.dsl")
+        )
+        stem_doc = (
+            active_path.stem
+            if active_path is not None
+            else Path(nombre_doc).stem
+        )
+
+        if not codigo_fuente.strip():
+            actualizar_arbol_sintactico(None, ["El archivo está vacío."])
+            if mostrar_en_consola:
+                escribir_en_consola("[!] El editor está vacío. Escribe o abre un archivo DSL para compilar.")
+                establecer_estado("Editor vacío", "#f0b45b")
+            return False, None, None
+
+        if not codigo_fuente.endswith("\n"):
+            codigo_fuente += "\n"
+
+        # 1. Fase Léxica
+        errores_lexicos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(codigo_fuente)
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+
+        if errores_lexicos:
+            actualizar_arbol_sintactico(None, list(errores_lexicos))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    f"[Fase Léxica] Se encontraron {len(errores_lexicos)} errores léxicos:",
+                    *[f"  • {e}" for e in errores_lexicos],
+                    "[Fase Sintáctica] Omitida debido a errores léxicos previos.",
+                    "[Fase Semántica] Omitida debido a errores léxicos previos.",
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error léxico ({len(errores_lexicos)})", "#ff7c84")
+            return False, None, None
+
+        # 2. Fase Sintáctica
+        errores_sintacticos.clear()
+        token_iterator = iter(tokens)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ast_resultado = parser.parse(tokenfunc=lambda: next(token_iterator, None))
+
+        if errores_sintacticos:
+            actualizar_arbol_sintactico(ast_resultado, list(errores_sintacticos))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
+                    f"[Fase Sintáctica] Se encontraron {len(errores_sintacticos)} errores sintácticos:",
+                    *[f"  • {e}" for e in errores_sintacticos],
+                    "[Fase Semántica] Omitida debido a errores sintácticos previos.",
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error sintáctico ({len(errores_sintacticos)})", "#ff7c84")
+            return False, None, None
+
+        # 3. Fase Semántica
+        analizador_sem = SemanticAnalyzer()
+        with contextlib.redirect_stdout(io.StringIO()):
+            errores_sem, tabla_simbolos = analizador_sem.analyze(ast_resultado)
+
+        if errores_sem:
+            actualizar_arbol_sintactico(ast_resultado, list(errores_sem))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
+                    "[Fase Sintáctica] ÉXITO (0 errores sintácticos).",
+                    f"[Fase Semántica] Se encontraron {len(errores_sem)} errores semánticos:",
+                    *[f"  • {e}" for e in errores_sem],
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error semántico ({len(errores_sem)})", "#ff7c84")
+            return False, None, None
+
+        # 4. Fase de Generación de Código SQL (PostgreSQL)
+        actualizar_arbol_sintactico(ast_resultado, None)
+        generador = SQLCodeGenerator(tabla_simbolos)
+        sentencias_sql = generador.generate(ast_resultado)
+        script_sql = sentencias_sql.script
+
+        carpeta_sql = root_directory / "sql_generado"
+        carpeta_sql.mkdir(parents=True, exist_ok=True)
+        ruta_sql = carpeta_sql / f"{stem_doc}.sql"
+        try:
+            ruta_sql.write_text(script_sql + ("\n" if script_sql else ""), encoding="utf-8")
+        except OSError:
+            pass
+        dibujar_arbol_directorios()
+
+        if mostrar_en_consola:
+            lineas = [
+                "=" * 70,
+                f"COMPILACIÓN EXITOSA: {nombre_doc}",
+                "=" * 70,
+                "[Fase Léxica] ÉXITO (0 errores).",
+                "[Fase Sintáctica] ÉXITO (0 errores).",
+                "[Fase Semántica] ÉXITO (0 errores).",
+                f"[Fase Generación SQL] {len(sentencias_sql)} sentencia(s) PostgreSQL generada(s).",
+                f"[Archivo guardado] {ruta_sql}",
+                "",
+                "--- Código SQL Generado (PostgreSQL) ---",
+            ]
+            for idx, stmt in enumerate(sentencias_sql, start=1):
+                lineas.append(f"\n-- [{idx}]")
+                lineas.append(stmt)
+            lineas.append("=" * 70)
+            escribir_en_consola("\n".join(lineas))
+            establecer_estado(
+                f"Compilado con éxito · {len(sentencias_sql)} sentencias SQL",
+                "#56d68b",
+            )
+
+        return True, sentencias_sql, ruta_sql
+
+    async def compilar_codigo(_=None):
+        ejecutar_pipeline_compilacion(mostrar_en_consola=True)
+        page.update()
+
+    async def compilar_y_ejecutar_codigo(_=None):
+        exito, sentencias_sql, _ = ejecutar_pipeline_compilacion(mostrar_en_consola=True)
+        if not exito or not sentencias_sql:
+            page.update()
+            return
+
+        establecer_estado("Ejecutando SQL en PostgreSQL...", "#4da3ff")
+        executor = PostgresExecutor()
+        reporte = await asyncio.to_thread(
+            executor.execute_statements,
+            sentencias_sql,
+            None,
+            True,
+        )
+        escribir_en_consola(reporte.format_report())
+        if not reporte.connected:
+            establecer_estado("Error de conexión a PostgreSQL", "#ff7c84")
+        elif reporte.error_count > 0:
+            establecer_estado(
+                f"Ejecutado con {reporte.error_count} error(es) en PostgreSQL",
+                "#f0b45b",
+            )
+        else:
+            establecer_estado(
+                f"Ejecución PostgreSQL exitosa · {reporte.success_count} sentencias OK",
+                "#56d68b",
+            )
+        page.update()
+
+    def abrir_configuracion_bd(_=None):
+        cfg = load_db_config()
+        host_field = ft.TextField(label="Host", value=str(cfg.get("host", "localhost")), height=44, text_size=13)
+        port_field = ft.TextField(label="Puerto", value=str(cfg.get("port", 5432)), height=44, text_size=13)
+        user_field = ft.TextField(label="Usuario", value=str(cfg.get("user", "postgres")), height=44, text_size=13)
+        pass_field = ft.TextField(
+            label="Contraseña",
+            value=str(cfg.get("password", "postgres")),
+            password=True,
+            can_reveal_password=True,
+            height=44,
+            text_size=13,
+        )
+        db_field = ft.TextField(
+            label="Base de datos",
+            value=str(cfg.get("dbname", "compiladorsql_db")),
+            height=44,
+            text_size=13,
+        )
+        reset_check = ft.Checkbox(
+            label="Reiniciar tablas del script antes de ejecutar (DROP CASCADE)",
+            value=bool(cfg.get("reset_tables", True)),
+        )
+        feedback_text = ft.Text("", size=12, color=MUTED)
+
+        async def probar_conexion_click(_):
+            feedback_text.value = "Probando conexión..."
+            feedback_text.color = "#4da3ff"
+            page.update()
+            try:
+                puerto_val = int(port_field.value or 5432)
+            except ValueError:
+                puerto_val = 5432
+            exec_test = PostgresExecutor(
+                host=host_field.value or "localhost",
+                port=puerto_val,
+                user=user_field.value or "postgres",
+                password=pass_field.value or "",
+                dbname=db_field.value or "compiladorsql_db",
+            )
+            ok, msg = await asyncio.to_thread(exec_test.test_connection, True)
+            feedback_text.value = msg
+            feedback_text.color = "#56d68b" if ok else "#ff7c84"
+            page.update()
+
+        def guardar_cfg_click(_):
+            try:
+                puerto_val = int(port_field.value or 5432)
+            except ValueError:
+                puerto_val = 5432
+            nueva_cfg = {
+                "host": (host_field.value or "localhost").strip(),
+                "port": puerto_val,
+                "user": (user_field.value or "postgres").strip(),
+                "password": pass_field.value or "",
+                "dbname": (db_field.value or "compiladorsql_db").strip(),
+                "reset_tables": bool(reset_check.value),
+            }
+            ruta_cfg = save_db_config(nueva_cfg)
+            page.pop_dialog()
+            establecer_estado(f"Configuración PostgreSQL guardada ({ruta_cfg.name})", "#56d68b")
+
+        def cerrar_cfg_click(_):
+            page.pop_dialog()
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Configuración de Conexión PostgreSQL", size=16, weight=ft.FontWeight.W_700),
+                content=ft.Container(
+                    content=ft.Column(
+                        [
+                            host_field,
+                            port_field,
+                            user_field,
+                            pass_field,
+                            db_field,
+                            reset_check,
+                            feedback_text,
+                        ],
+                        tight=True,
+                        spacing=10,
+                    ),
+                    width=420,
+                ),
+                actions=[
+                    ft.TextButton("Probar conexión", on_click=probar_conexion_click),
+                    ft.TextButton("Cancelar", on_click=cerrar_cfg_click),
+                    ft.FilledButton("Guardar", on_click=guardar_cfg_click),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
     toolbar = ft.Container(
         content=ft.Row(
             [
@@ -1676,8 +2067,9 @@ def iniciar_interfaz(page: ft.Page):
                 crear_boton_accion("Abrir archivo", ft.Icons.FOLDER_OPEN, "#2a3c53", elegir_archivo, "#52779b"),
                 crear_boton_accion("Guardar", ft.Icons.SAVE, "#2a3c53", guardar_archivo, "#52779b"),
                 ft.Container(width=4),
-                crear_boton_accion("Compilar", ft.Icons.PLAY_ARROW, "#0b9f99"),
-                crear_boton_accion("Compilar y ejecutar", ft.Icons.PLAY_ARROW, "#e98222"),
+                crear_boton_accion("Compilar", ft.Icons.PLAY_ARROW, "#0b9f99", compilar_codigo, "#087f7a"),
+                crear_boton_accion("Compilar y ejecutar", ft.Icons.PLAY_ARROW, "#e98222", compilar_y_ejecutar_codigo, "#c56b17"),
+                crear_boton_accion("PostgreSQL", ft.Icons.STORAGE, "#2a3c53", abrir_configuracion_bd, "#52779b"),
                 ft.Container(expand=True),
                 root_name_label,
                 crear_boton_icono(ft.Icons.FOLDER_OPEN, "Seleccionar carpeta raíz", elegir_carpeta),
@@ -1766,6 +2158,7 @@ def iniciar_interfaz(page: ft.Page):
         initial_path = active_path
         active_path = None
         abrir_ruta(initial_path)
+        ejecutar_pipeline_compilacion(mostrar_en_consola=False)
     else:
         actualizar_metadatos_editor()
     page.update()
