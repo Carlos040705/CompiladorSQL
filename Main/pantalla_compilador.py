@@ -1,5 +1,6 @@
 import asyncio
 import queue
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -60,6 +61,7 @@ def iniciar_interfaz(page: ft.Page):
     pending_terminal_size: tuple[int, int, float] | None = None
     editor_scroll_offset = 0.0
     editor_viewport_height = 0.0
+    editor_line_height = 18
 
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
@@ -88,14 +90,18 @@ def iniciar_interfaz(page: ft.Page):
     )
     line_numbers = ft.Column(
         controls=[
-            ft.Text(
-                "1",
-                size=14,
-                color="#61738c",
-                font_family="Consolas",
-                text_align=ft.TextAlign.RIGHT,
-                selectable=False,
-                height=18,
+            ft.Container(
+                content=ft.Text(
+                    "1",
+                    size=14,
+                    color="#61738c",
+                    font_family="Consolas",
+                    style=ft.TextStyle(height=editor_line_height / 14),
+                    text_align=ft.TextAlign.RIGHT,
+                    selectable=False,
+                ),
+                height=editor_line_height,
+                alignment=ft.Alignment.CENTER_RIGHT,
             )
         ],
         spacing=0,
@@ -106,7 +112,7 @@ def iniciar_interfaz(page: ft.Page):
         value="",
         multiline=True,
         min_lines=1,
-        max_lines=None,
+        max_lines=2,
         expand=False,
         border=ft.InputBorder.NONE,
         bgcolor="transparent",
@@ -117,7 +123,14 @@ def iniciar_interfaz(page: ft.Page):
         text_style=ft.TextStyle(
             font_family="Consolas",
             size=14,
+            height=editor_line_height / 14,
             color=TEXT,
+        ),
+        strut_style=ft.StrutStyle(
+            font_family="Consolas",
+            size=14,
+            height=editor_line_height / 14,
+            force_strut_height=True,
         ),
         on_change=None,
     )
@@ -130,22 +143,45 @@ def iniciar_interfaz(page: ft.Page):
         nonlocal editor_viewport_height
         editor_viewport_height = event.height
 
+    editor_preview = ft.Text(
+        value="",
+        size=14,
+        font_family="Consolas",
+        style=ft.TextStyle(
+            height=editor_line_height / 14,
+            color=TEXT,
+        ),
+        expand=True,
+    )
+    editor_preview_container = ft.Container(
+        content=editor_preview,
+        padding=ft.Padding.only(left=8, top=10, right=12, bottom=12),
+        expand=True,
+        ignore_interactions=True,
+        visible=False,
+    )
     editor_content = ft.Row(
         [
             ft.Container(
                 content=line_numbers,
                 width=42,
-                padding=ft.Padding.only(left=0, top=10, right=8),
+                padding=ft.Padding.only(left=0, top=6, right=8),
                 alignment=ft.Alignment.TOP_RIGHT,
             ),
             ft.Container(
-                content=editor,
+                content=ft.Stack(
+                    controls=[
+                        editor_preview_container,
+                        editor,
+                    ],
+                    fit=ft.StackFit.EXPAND,
+                    expand=True,
+                ),
                 expand=True,
                 bgcolor="transparent",
             ),
         ],
         spacing=0,
-        height=40,
         vertical_alignment=ft.CrossAxisAlignment.STRETCH,
     )
     editor_scroll = ft.Column(
@@ -243,22 +279,29 @@ def iniciar_interfaz(page: ft.Page):
         )
         contents = editor.value or ""
         line_count = contents.count("\n") + 1
-        editor.max_lines = line_count
+        editor.max_lines = line_count + 1
         line_numbers.controls = [
-            ft.Text(
-                str(number),
-                size=14,
-                color="#61738c",
-                font_family="Consolas",
-                text_align=ft.TextAlign.RIGHT,
-                selectable=False,
-                height=18,
+            ft.Container(
+                content=ft.Text(
+                    str(number),
+                    size=14,
+                    color="#61738c",
+                    font_family="Consolas",
+                    style=ft.TextStyle(height=editor_line_height / 14),
+                    text_align=ft.TextAlign.RIGHT,
+                    selectable=False,
+                ),
+                height=editor_line_height,
+                alignment=ft.Alignment.CENTER_RIGHT,
             )
             for number in range(1, line_count + 1)
         ]
-        content_height = max(40, line_count * 18 + 22)
+        content_height = line_count * editor_line_height + 30
+        line_numbers.height = content_height
         editor.height = content_height
         editor_content.height = content_height
+        if search_bar.visible:
+            actualizar_vista_busqueda()
         actualizar_posicion_cursor(editor.selection)
         dibujar_pestanas()
 
@@ -275,16 +318,210 @@ def iniciar_interfaz(page: ft.Page):
         actualizar_posicion_cursor(event.selection)
         preceding_text = (editor.value or "")[:event.selection.extent_offset]
         line = preceding_text.count("\n") + 1
-        line_top = (line - 1) * 18 + 10
+        line_top = (line - 1) * editor_line_height + 10
         if editor_viewport_height and line_top < editor_scroll_offset:
             await editor_scroll.scroll_to(offset=max(0, line_top), duration=120)
         elif (
             editor_viewport_height
-            and line_top + 18 > editor_scroll_offset + editor_viewport_height
+            and line_top + editor_line_height
+            > editor_scroll_offset + editor_viewport_height
         ):
-            target = line_top - editor_viewport_height + 18
+            target = line_top - editor_viewport_height + editor_line_height
             await editor_scroll.scroll_to(offset=max(0, target), duration=120)
         page.update(cursor_position_label)
+
+    search_matches: list[tuple[int, int]] = []
+    active_search_match = -1
+    search_status = ft.Text("0 coincidencias", size=11, color=MUTED)
+
+    def actualizar_vista_busqueda():
+        contents = editor.value or ""
+        spans = []
+        cursor = 0
+        for index, (start, end) in enumerate(search_matches):
+            if start > cursor:
+                spans.append(
+                    ft.TextSpan(
+                        text=contents[cursor:start],
+                        style=ft.TextStyle(
+                            font_family="Consolas",
+                            size=14,
+                            height=editor_line_height / 14,
+                            color=TEXT,
+                        ),
+                    )
+                )
+            spans.append(
+                ft.TextSpan(
+                    text=contents[start:end],
+                    style=ft.TextStyle(
+                        font_family="Consolas",
+                        size=14,
+                        height=editor_line_height / 14,
+                        color=TEXT,
+                        bgcolor="#b78b2c" if index == active_search_match else "#634f28",
+                    ),
+                )
+            )
+            cursor = end
+        if cursor < len(contents):
+            spans.append(
+                ft.TextSpan(
+                    text=contents[cursor:],
+                    style=ft.TextStyle(
+                        font_family="Consolas",
+                        size=14,
+                        height=editor_line_height / 14,
+                        color=TEXT,
+                    ),
+                )
+            )
+        editor_preview.value = ""
+        editor_preview.spans = spans or None
+        if not spans:
+            editor_preview.value = contents
+        editor_preview_container.visible = search_bar.visible
+
+    async def seleccionar_coincidencia(index: int):
+        nonlocal active_search_match
+        if not search_matches:
+            return
+        active_search_match = index % len(search_matches)
+        start, end = search_matches[active_search_match]
+        editor.selection = ft.TextSelection(start, end)
+        search_status.value = (
+            f"{active_search_match + 1} de {len(search_matches)}"
+        )
+        actualizar_vista_busqueda()
+        line = (editor.value or "")[:start].count("\n") + 1
+        line_top = (line - 1) * editor_line_height + 10
+        if editor_viewport_height and line_top < editor_scroll_offset:
+            await editor_scroll.scroll_to(offset=max(0, line_top), duration=120)
+        elif (
+            editor_viewport_height
+            and line_top + editor_line_height
+            > editor_scroll_offset + editor_viewport_height
+        ):
+            target = line_top - editor_viewport_height + editor_line_height
+            await editor_scroll.scroll_to(offset=max(0, target), duration=120)
+        page.update(editor_preview, editor_preview_container, search_status)
+
+    async def actualizar_busqueda(_=None):
+        nonlocal search_matches, active_search_match
+        query = search_field.value or ""
+        contents = editor.value or ""
+        search_matches = (
+            [
+                (match.start(), match.end())
+                for match in re.finditer(re.escape(query), contents, re.IGNORECASE)
+            ]
+            if query
+            else []
+        )
+        if search_matches:
+            await seleccionar_coincidencia(0)
+        else:
+            active_search_match = -1
+            if editor.selection and not editor.selection.is_collapsed:
+                editor.selection = ft.TextSelection(
+                    editor.selection.extent_offset,
+                    editor.selection.extent_offset,
+                )
+            search_status.value = "0 coincidencias"
+            actualizar_vista_busqueda()
+            page.update(editor_preview, editor_preview_container, search_status)
+
+    async def abrir_busqueda(_=None):
+        selected_text = ""
+        if editor.selection and not editor.selection.is_collapsed:
+            start = editor.selection.start
+            end = editor.selection.end
+            selected_text = (editor.value or "")[start:end]
+        search_field.value = selected_text
+        editor.color = ft.Colors.TRANSPARENT
+        editor.text_style = ft.TextStyle(
+            font_family="Consolas",
+            size=14,
+            height=editor_line_height / 14,
+            color=ft.Colors.TRANSPARENT,
+        )
+        editor.selection_color = ft.Colors.TRANSPARENT
+        search_bar.visible = True
+        actualizar_vista_busqueda()
+        page.update()
+        await actualizar_busqueda()
+        await search_field.focus()
+
+    async def buscar_siguiente(_=None):
+        if search_matches:
+            await seleccionar_coincidencia(active_search_match + 1)
+
+    async def buscar_anterior(_=None):
+        if search_matches:
+            await seleccionar_coincidencia(active_search_match - 1)
+
+    async def cerrar_busqueda(_=None):
+        search_bar.visible = False
+        editor_preview_container.visible = False
+        editor.color = TEXT
+        editor.text_style = ft.TextStyle(
+            font_family="Consolas",
+            size=14,
+            height=editor_line_height / 14,
+            color=TEXT,
+        )
+        editor.selection_color = "#315275"
+        await editor.focus()
+        page.update(editor, editor_preview_container, search_bar)
+
+    search_field = ft.TextField(
+        hint_text="Buscar en el archivo",
+        height=38,
+        content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+        border_color=BORDER,
+        focused_border_color=ACCENT,
+        text_size=13,
+        expand=True,
+        on_change=actualizar_busqueda,
+        on_submit=buscar_siguiente,
+    )
+    search_bar = ft.Container(
+        content=ft.Row(
+            [
+                search_field,
+                search_status,
+                ft.IconButton(
+                    icon=ft.Icons.KEYBOARD_ARROW_UP,
+                    tooltip="Coincidencia anterior",
+                    icon_color=MUTED,
+                    on_click=buscar_anterior,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.KEYBOARD_ARROW_DOWN,
+                    tooltip="Coincidencia siguiente",
+                    icon_color=MUTED,
+                    on_click=buscar_siguiente,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    tooltip="Cerrar búsqueda",
+                    icon_color=MUTED,
+                    on_click=cerrar_busqueda,
+                ),
+            ],
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+        bgcolor="#151e2b",
+        visible=False,
+    )
+
+    def al_pulsar_tecla_pagina(event):
+        if event.ctrl and event.key.lower() == "f":
+            page.run_task(abrir_busqueda)
+
+    page.on_keyboard_event = al_pulsar_tecla_pagina
 
     terminal_colors = {
         "black": "#101722",
@@ -854,8 +1091,12 @@ def iniciar_interfaz(page: ft.Page):
 
     page.on_close = detener_powershell
 
-    def al_cambiar_editor(_):
+    async def al_cambiar_editor(event):
+        contents = event.data if isinstance(event.data, str) else editor.value or ""
+        editor.value = contents
         actualizar_metadatos_editor()
+        if search_bar.visible:
+            await actualizar_busqueda()
         page.update()
 
     editor.on_change = al_cambiar_editor
@@ -1265,7 +1506,18 @@ def iniciar_interfaz(page: ft.Page):
                     content=ft.Row(
                         [
                             tabs_bar,
-                            ft.Text("⋯", size=20, color=MUTED),
+                            ft.PopupMenuButton(
+                                icon=ft.Icons.MORE_HORIZ,
+                                icon_color=MUTED,
+                                tooltip="Opciones del editor",
+                                items=[
+                                    ft.PopupMenuItem(
+                                        content="Buscar texto  Ctrl+F",
+                                        icon=ft.Icons.SEARCH,
+                                        on_click=abrir_busqueda,
+                                    )
+                                ],
+                            ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1274,6 +1526,7 @@ def iniciar_interfaz(page: ft.Page):
                     padding=ft.Padding.only(left=12, right=6, top=2, bottom=2),
                     height=39,
                 ),
+                search_bar,
                 editor_scroll,
                 ft.Container(
                     content=ft.Row(
