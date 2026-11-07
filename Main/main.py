@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from lexer import lexer
+from lexer import lexer, errores_lexicos
 from parser import parser, errores_sintacticos
 from visitor import ASTPrinter
 from semantic import SemanticAnalyzer
@@ -21,8 +21,25 @@ def analizar_archivo(ruta: Path):
     if not codigo_prueba.endswith("\n"):
         codigo_prueba += "\n"
 
+    errores_lexicos.clear()
+    lexer.input(codigo_prueba)
+    tokens = []
+    while True:
+        token = lexer.token()
+        if token is None:
+            break
+        tokens.append(token)
+
+    if errores_lexicos:
+        print(f"\n[Fase Léxica] Se encontraron {len(errores_lexicos)} errores léxicos.")
+        print("[Fase Sintáctica] Omitida debido a errores léxicos previos.")
+        print("[Fase Semántica] Omitida debido a errores léxicos previos.")
+        print("=" * 75)
+        return
+
     errores_sintacticos.clear()
-    ast_resultado = parser.parse(codigo_prueba, lexer=lexer)
+    token_iterator = iter(tokens)
+    ast_resultado = parser.parse(tokenfunc=lambda: next(token_iterator, None))
 
     if errores_sintacticos:
         print(f"\n[Fase Sintáctica] Se encontraron {len(errores_sintacticos)} errores sintácticos.")
@@ -41,7 +58,7 @@ def analizar_archivo(ruta: Path):
         if errores_sem:
             print(f"\n[Fase Semántica] Se encontraron {len(errores_sem)} errores semánticos.")
         else:
-            print("\n[Fase Semántica] ÉXITO (0 errores semánticos). Código listo para generación SQL.")
+            print("\n[Fase Semántica] ÉXITO (0 errores semánticos). La generación SQL aún no está implementada.")
     print("=" * 75)
 
 

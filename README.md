@@ -20,8 +20,23 @@ compilación y el árbol sintáctico son solamente visuales por ahora. En la ter
 Instala las dependencias con `python -m pip install -r requirements.txt` antes de
 abrir la interfaz. La terminal integrada requiere Windows.
 
+## Analizador del lenguaje
 
+Para analizar los archivos de prueba desde la raíz del proyecto:
 
+```powershell
+python Main\main.py
+```
+
+También se pueden pasar rutas de archivos DSL como argumentos. El flujo valida
+errores léxicos antes de continuar con el análisis sintáctico y semántico. La
+generación de SQL todavía no está implementada.
+
+Las pruebas del analizador semántico se ejecutan con:
+
+```powershell
+python -m unittest discover -s Main -p "test_*.py"
+```
 
 
 

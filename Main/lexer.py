@@ -1,5 +1,7 @@
 import ply.lex as lex
 
+errores_lexicos = []
+
 reserved = {
     'model': 'MODEL', 
     'change': 'CHANGE', 
@@ -168,13 +170,17 @@ def t_SALTO_LINEA(t):
             tok.lexpos = t.lexpos
             t.lexer.token_queue.append(tok)
         if indent_level != t.lexer.indents[-1]:
-            print(f"Error de indentación en la línea {t.lexer.lineno}")
+            msg = f"Error de indentación en la línea {t.lexer.lineno}: nivel {indent_level} no coincide con un bloque anterior."
+            errores_lexicos.append(msg)
+            print(msg)
             
     return t
 
 def t_error(t):
     col = find_column(t.lexer.lexdata, t)
-    print(f"Error léxico: Carácter no permitido '{t.value[0]}' en línea {t.lexer.lineno}, columna {col}")
+    msg = f"Error léxico: Carácter no permitido '{t.value[0]}' en línea {t.lexer.lineno}, columna {col}"
+    errores_lexicos.append(msg)
+    print(msg)
     t.lexer.skip(1)
 
 lexer = lex.lex()

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 from visitor import Visitor
 from ast_nodes import (
-    Program, ModelDeclaration, Field, DataType, Constraint,
+    Program, ModelDeclaration, Field,
     DbOperation, Parameter, Literal, Identifier,
     BinaryOperation, UnaryOperation
 )
@@ -222,8 +222,7 @@ class SemanticAnalyzer(Visitor):
                 )
 
         constraints_set = set()
-        default_val = None
-
+        default_constraints = []
         for c in node.constraints:
             c_type = c.constraint_type.upper()
             if c_type in constraints_set:
@@ -232,27 +231,28 @@ class SemanticAnalyzer(Visitor):
                     lineno
                 )
             constraints_set.add(c_type)
-
-            # Validar compatibilidad de tipo en DEFAULT = valor
             if c_type == 'DEFAULT' and c.value is not None:
-                default_val = c.value
-                val_type = self.visit(c.value)
-                if dtype_name == 'AUTO':
-                    self.report_error(
-                        f"El campo '{node.name}' es de tipo 'auto' (autoincremental) y no puede tener un valor 'default'.",
-                        lineno
-                    )
-                elif val_type == 'NULL' and 'REQUIRED' in constraints_set:
-                    self.report_error(
-                        f"El campo '{node.name}' es 'required' pero su valor por defecto es 'empty' (nulo).",
-                        lineno
-                    )
-                elif not are_types_compatible_for_assignment(dtype_name, val_type):
-                    self.report_error(
-                        f"Tipo incompatible en 'default' del campo '{node.name}': "
-                        f"el campo es '{dtype_name}' pero el valor por defecto es de tipo '{val_type}'.",
-                        lineno
-                    )
+                default_constraints.append(c)
+
+        default_val = default_constraints[0].value if default_constraints else None
+        for constraint in default_constraints:
+            val_type = self.visit(constraint.value)
+            if dtype_name == 'AUTO':
+                self.report_error(
+                    f"El campo '{node.name}' es de tipo 'auto' (autoincremental) y no puede tener un valor 'default'.",
+                    lineno
+                )
+            elif val_type == 'NULL' and 'REQUIRED' in constraints_set:
+                self.report_error(
+                    f"El campo '{node.name}' es 'required' pero su valor por defecto es 'empty' (nulo).",
+                    lineno
+                )
+            elif not are_types_compatible_for_assignment(dtype_name, val_type):
+                self.report_error(
+                    f"Tipo incompatible en 'default' del campo '{node.name}': "
+                    f"el campo es '{dtype_name}' pero el valor por defecto es de tipo '{val_type}'.",
+                    lineno
+                )
 
         return FieldSymbol(
             name=node.name,
@@ -293,11 +293,19 @@ class SemanticAnalyzer(Visitor):
                 self._validate_link_call(call, lineno)
 
         # Validar coherencia de la cadena de métodos y cada eslabón
-        self._validate_method_chain_coherence(calls, base_model, lineno)
+        self._validate_method_chain_coherence(calls, lineno)
 
-        for call in calls:
+        for index, call in enumerate(calls):
             if call.method.lower() != 'link':  # link ya fue validado
-                self._validate_single_call(call, base_model, lineno)
+                self._validate_single_call(
+                    call,
+                    base_model,
+                    lineno,
+                    has_prior_filter=any(
+                        prior.method.lower() == 'if' and prior.arguments
+                        for prior in calls[:index]
+                    ),
+                )
 
         self.active_models = []
 
@@ -318,7 +326,7 @@ class SemanticAnalyzer(Visitor):
         elif target_model not in self.active_models:
             self.active_models.append(target_model)
 
-    def _validate_method_chain_coherence(self, calls: list, base_model: ModelSymbol, lineno: int):
+    def _validate_method_chain_coherence(self, calls: list, lineno: int):
         methods = [c.method.lower() for c in calls]
         # new/add no deben encadenarse con cláusulas de consulta
         if ('new' in methods or 'add' in methods) and len(methods) > 1:
@@ -333,9 +341,28 @@ class SemanticAnalyzer(Visitor):
                 lineno
             )
 
-    def _validate_single_call(self, call, base_model: ModelSymbol, lineno: int):
+    def _validate_single_call(
+        self,
+        call,
+        base_model: ModelSymbol,
+        lineno: int,
+        has_prior_filter: bool = False,
+    ):
         method = call.method.lower()
         args = call.arguments or []
+
+        if method in ('new', 'add', 'modify'):
+            seen_parameters = set()
+            for arg in args:
+                if not isinstance(arg, Parameter):
+                    continue
+                key = arg.name.lower()
+                if key in seen_parameters:
+                    self.report_error(
+                        f"El campo '{arg.name}' aparece más de una vez en los argumentos de '.{method}()'.",
+                        getattr(arg, 'lineno', lineno)
+                    )
+                seen_parameters.add(key)
 
         # 1. Inserción: .new(...) o .add(...)
         if method in ('new', 'add'):
@@ -399,6 +426,11 @@ class SemanticAnalyzer(Visitor):
 
         # 4. Filtros condicionales: .if(...) / .ifgroup(...) / .remove(...)
         elif method in ('if', 'ifgroup', 'remove'):
+            if method == 'remove' and not has_prior_filter and not args:
+                self.report_error(
+                    "El método '.remove()' requiere una condición '.if(...)' previa o una condición como argumento.",
+                    lineno
+                )
             if method in ('if', 'ifgroup') and not args:
                 self.report_error(f"El método '.{method}()' requiere una condición lógica o relacional.", lineno)
                 return
@@ -473,15 +505,31 @@ class SemanticAnalyzer(Visitor):
 
     # --- Auxiliares de validación de parámetros y campos ---
     def _resolve_field_or_error(self, field_name: str, lineno: int) -> Optional[FieldSymbol]:
-        matches = self.symbol_table.resolve_field_in_scope(field_name, self.active_models)
-        if not matches:
+        if self.active_models:
+            base_field = self.active_models[0].get_field(field_name)
+            if base_field is not None:
+                return base_field
+
+        matches = [
+            (model, model.get_field(field_name))
+            for model in self.active_models[1:]
+            if model.get_field(field_name) is not None
+        ]
+        if not matches and self.active_models and self.active_models[0].get_field(field_name) is None:
             model_names = ", ".join(m.name for m in self.active_models)
             self.report_error(
                 f"El campo '{field_name}' no existe en el modelo activo ({model_names}).",
                 lineno
             )
             return None
-        return matches[0]
+        if len(matches) > 1:
+            model_names = ", ".join(model.name for model, _ in matches)
+            self.report_error(
+                f"El campo '{field_name}' es ambiguo entre los modelos enlazados: {model_names}.",
+                lineno
+            )
+            return None
+        return matches[0][1] if matches else None
 
     def _validate_parameter_assignment(self, param: Parameter, model: ModelSymbol, is_insert: bool, lineno: int):
         f_sym = model.get_field(param.name)
@@ -583,8 +631,8 @@ class SemanticAnalyzer(Visitor):
                     lineno
                 )
                 return 'ERROR'
-            # Verificar división o módulo por cero literal
-            if op in ('/', '%') and isinstance(node.right, Literal) and node.right.value == 0:
+            # Detect zero divisors even when they are expressed as constant subexpressions.
+            if op in ('/', '%') and self._constant_numeric_value(node.right) == 0:
                 self.report_error(f"División o módulo por cero detectado en la operación '{op}'.", lineno)
                 return 'ERROR'
             if left_type == 'DECIMAL' or right_type == 'DECIMAL' or op == '/':
@@ -613,3 +661,28 @@ class SemanticAnalyzer(Visitor):
             return 'BOOL'
 
         return 'ERROR'
+
+    def _constant_numeric_value(self, node):
+        if isinstance(node, Literal) and node.literal_type in ('NUMBER_INT', 'NUMBER_DECIMAL'):
+            return node.value
+        if isinstance(node, UnaryOperation) and node.operator in ('+', '-'):
+            value = self._constant_numeric_value(node.operand)
+            if value is not None:
+                return value if node.operator == '+' else -value
+        if isinstance(node, BinaryOperation) and node.operator in ('+', '-', '*', '/', '%'):
+            left = self._constant_numeric_value(node.left)
+            right = self._constant_numeric_value(node.right)
+            if left is None or right is None:
+                return None
+            if node.operator == '+':
+                return left + right
+            if node.operator == '-':
+                return left - right
+            if node.operator == '*':
+                return left * right
+            if right == 0:
+                return None
+            if node.operator == '/':
+                return left / right
+            return left % right
+        return None
