@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Dict, List, Optional, Set
 from visitor import Visitor
 from ast_nodes import (
@@ -155,6 +156,7 @@ class SemanticAnalyzer(Visitor):
     def __init__(self):
         self.symbol_table = SymbolTable()
         self.errors: List[str] = []
+        self.warnings: List[str] = []
         self.active_models: List[ModelSymbol] = []
 
     def report_error(self, message: str, lineno: int = 0):
@@ -166,6 +168,7 @@ class SemanticAnalyzer(Visitor):
     def analyze(self, ast_root: Program):
         self.symbol_table.clear()
         self.errors.clear()
+        self.warnings.clear()
         if ast_root is not None:
             self.visit(ast_root)
         return self.errors, self.symbol_table
@@ -236,23 +239,26 @@ class SemanticAnalyzer(Visitor):
 
         default_val = default_constraints[0].value if default_constraints else None
         for constraint in default_constraints:
+            c_lineno = getattr(constraint, 'lineno', lineno) or lineno
             val_type = self.visit(constraint.value)
             if dtype_name == 'AUTO':
                 self.report_error(
                     f"El campo '{node.name}' es de tipo 'auto' (autoincremental) y no puede tener un valor 'default'.",
-                    lineno
+                    c_lineno
                 )
             elif val_type == 'NULL' and 'REQUIRED' in constraints_set:
                 self.report_error(
                     f"El campo '{node.name}' es 'required' pero su valor por defecto es 'empty' (nulo).",
-                    lineno
+                    c_lineno
                 )
             elif not are_types_compatible_for_assignment(dtype_name, val_type):
                 self.report_error(
                     f"Tipo incompatible en 'default' del campo '{node.name}': "
                     f"el campo es '{dtype_name}' pero el valor por defecto es de tipo '{val_type}'.",
-                    lineno
+                    c_lineno
                 )
+            elif dtype_name == 'DECIMAL' and len(dtype_args) == 2:
+                self._validate_decimal_overflow(node.name, dtype_args, constraint.value, c_lineno)
 
         return FieldSymbol(
             name=node.name,
@@ -290,17 +296,19 @@ class SemanticAnalyzer(Visitor):
         # Pre-procesar .link(OtroModelo) en la cadena para incorporar sus campos al ámbito activo
         for call in calls:
             if call.method.lower() == 'link':
-                self._validate_link_call(call, lineno)
+                call_lineno = getattr(call, 'lineno', lineno) or lineno
+                self._validate_link_call(call, call_lineno)
 
         # Validar coherencia de la cadena de métodos y cada eslabón
         self._validate_method_chain_coherence(calls, lineno)
 
         for index, call in enumerate(calls):
             if call.method.lower() != 'link':  # link ya fue validado
+                call_lineno = getattr(call, 'lineno', lineno) or lineno
                 self._validate_single_call(
                     call,
                     base_model,
-                    lineno,
+                    call_lineno,
                     has_prior_filter=any(
                         prior.method.lower() == 'if' and prior.arguments
                         for prior in calls[:index]
@@ -310,20 +318,33 @@ class SemanticAnalyzer(Visitor):
         self.active_models = []
 
     def _validate_link_call(self, call, lineno: int):
+        call_lineno = getattr(call, 'lineno', lineno) or lineno
         if len(call.arguments) != 1 or not isinstance(call.arguments[0], Identifier):
             self.report_error(
                 "El método '.link()' requiere exactamente el nombre de un modelo como argumento (ej. .link(Curso)).",
-                lineno
+                call_lineno
             )
             return
-        target_name = call.arguments[0].name
+        arg = call.arguments[0]
+        arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
+        target_name = arg.name
         target_model = self.symbol_table.get_model(target_name)
         if target_model is None:
             self.report_error(
                 f"El modelo '{target_name}' referenciado en '.link({target_name})' no existe.",
-                lineno
+                arg_lineno
             )
-        elif target_model not in self.active_models:
+        elif self.active_models and target_model == self.active_models[0]:
+            self.report_error(
+                f"Auto-enlace inválido en '.link({target_name})': el modelo '{target_model.name}' es el modelo base y ya forma parte del ámbito activo de la consulta.",
+                arg_lineno
+            )
+        elif target_model in self.active_models:
+            self.report_error(
+                f"Enlace duplicado en '.link({target_name})': el modelo '{target_model.name}' ya fue unido previamente y ya forma parte del ámbito activo de la consulta.",
+                arg_lineno
+            )
+        else:
             self.active_models.append(target_model)
 
     def _validate_method_chain_coherence(self, calls: list, lineno: int):
@@ -336,10 +357,68 @@ class SemanticAnalyzer(Visitor):
             )
         # ifgroup (HAVING) requiere group (GROUP BY) en la cadena
         if 'ifgroup' in methods and 'group' not in methods:
+            ifgroup_call = next((c for c in calls if c.method.lower() == 'ifgroup'), None)
+            err_lineno = getattr(ifgroup_call, 'lineno', lineno) or lineno
             self.report_error(
                 "El método '.ifgroup()' (HAVING) solo puede utilizarse cuando existe '.group()' (GROUP BY) en la cadena.",
-                lineno
+                err_lineno
             )
+
+        # Mezcla de operaciones mutadoras o terminales incompatibles
+        if 'modify' in methods and 'remove' in methods:
+            second_mut = next(
+                (c for c in calls if c.method.lower() in ('modify', 'remove') and c != calls[0]),
+                calls[-1]
+            )
+            err_lineno = getattr(second_mut, 'lineno', lineno) or lineno
+            self.report_error(
+                "Operaciones mutadoras incompatibles: no se puede combinar '.modify()' y '.remove()' en la misma cadena.",
+                err_lineno
+            )
+
+        incompatible_with_mutation = {
+            'count', 'sum', 'avg', 'max', 'min',
+            'group', 'ifgroup',
+            'up', 'down',
+            'take', 'skip',
+        }
+        if 'modify' in methods or 'remove' in methods:
+            mut_name = 'modify' if 'modify' in methods else 'remove'
+            for call in calls:
+                m = call.method.lower()
+                if m in incompatible_with_mutation:
+                    err_lineno = getattr(call, 'lineno', lineno) or lineno
+                    self.report_error(
+                        f"Operación incompatible en la cadena: no se puede combinar '.{mut_name}()' con '.{m}()'.",
+                        err_lineno
+                    )
+
+        # Orden inválido de filtrado respecto a mutaciones
+        seen_mutation = None
+        for call in calls:
+            m = call.method.lower()
+            if m in ('modify', 'remove') and seen_mutation is None:
+                seen_mutation = m
+            elif m == 'if' and seen_mutation is not None:
+                err_lineno = getattr(call, 'lineno', lineno) or lineno
+                self.report_error(
+                    f"Orden inválido en la cadena: el filtro '.if()' debe preceder a la operación de modificación o borrado '.{seen_mutation}()'.",
+                    err_lineno
+                )
+
+        # Cláusulas únicas duplicadas en la misma cadena
+        single_clause_methods = {'take', 'skip', 'group', 'ifgroup', 'modify', 'remove', 'new', 'add'}
+        seen_single_clauses = set()
+        for call in calls:
+            m = call.method.lower()
+            if m in single_clause_methods:
+                if m in seen_single_clauses:
+                    err_lineno = getattr(call, 'lineno', lineno) or lineno
+                    self.report_error(
+                        f"Cláusula duplicada en la cadena: el método '.{m}()' no puede invocarse más de una vez en la misma consulta.",
+                        err_lineno
+                    )
+                seen_single_clauses.add(m)
 
     def _validate_single_call(
         self,
@@ -348,6 +427,7 @@ class SemanticAnalyzer(Visitor):
         lineno: int,
         has_prior_filter: bool = False,
     ):
+        call_lineno = getattr(call, 'lineno', lineno) or lineno
         method = call.method.lower()
         args = call.arguments or []
 
@@ -356,11 +436,12 @@ class SemanticAnalyzer(Visitor):
             for arg in args:
                 if not isinstance(arg, Parameter):
                     continue
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 key = arg.name.lower()
                 if key in seen_parameters:
                     self.report_error(
                         f"El campo '{arg.name}' aparece más de una vez en los argumentos de '.{method}()'.",
-                        getattr(arg, 'lineno', lineno)
+                        arg_lineno
                     )
                 seen_parameters.add(key)
 
@@ -369,18 +450,19 @@ class SemanticAnalyzer(Visitor):
             if not args:
                 self.report_error(
                     f"El método '.{method}()' sobre '{base_model.name}' requiere al menos un parámetro de asignación.",
-                    lineno
+                    call_lineno
                 )
                 return
             provided_fields = set()
             for arg in args:
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if not isinstance(arg, Parameter):
                     self.report_error(
                         f"En '.{method}()', todos los argumentos deben ser asignaciones 'campo = valor'.",
-                        lineno
+                        arg_lineno
                     )
                     continue
-                self._validate_parameter_assignment(arg, base_model, is_insert=True, lineno=lineno)
+                self._validate_parameter_assignment(arg, base_model, is_insert=True, lineno=arg_lineno)
                 provided_fields.add(arg.name.lower())
 
             # Verificar campos obligatorios (REQUIRED sin DEFAULT y que no sean AUTO)
@@ -388,7 +470,7 @@ class SemanticAnalyzer(Visitor):
                 if f_sym.is_required and f_sym.name.lower() not in provided_fields:
                     self.report_error(
                         f"Falta el campo obligatorio '{f_sym.name}' (required) al insertar en el modelo '{base_model.name}'.",
-                        lineno
+                        call_lineno
                     )
 
         # 2. Actualización: .modify(...)
@@ -396,32 +478,34 @@ class SemanticAnalyzer(Visitor):
             if not args:
                 self.report_error(
                     f"El método '.modify()' sobre '{base_model.name}' requiere al menos un campo a modificar.",
-                    lineno
+                    call_lineno
                 )
                 return
             for arg in args:
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if not isinstance(arg, Parameter):
                     self.report_error(
                         "En '.modify()', todos los argumentos deben ser asignaciones 'campo = nuevo_valor'.",
-                        lineno
+                        arg_lineno
                     )
                     continue
-                self._validate_parameter_assignment(arg, base_model, is_insert=False, lineno=lineno)
+                self._validate_parameter_assignment(arg, base_model, is_insert=False, lineno=arg_lineno)
 
         # 3. Consulta / Proyección: .find(...)
         elif method == 'find':
             for arg in args:
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if isinstance(arg, Identifier):
-                    self._resolve_field_or_error(arg.name, lineno)
+                    self._resolve_field_or_error(arg.name, arg_lineno)
                 elif isinstance(arg, Parameter):
                     # Soporta sintaxis corta Estudiante.find(edad = 67)
-                    self._validate_parameter_filter(arg, lineno)
+                    self._validate_parameter_filter(arg, arg_lineno)
                 else:
                     cond_type = self.visit(arg)
                     if cond_type not in ('BOOL', 'ERROR'):
                         self.report_error(
                             f"Argumento inválido en '.find()': se esperaba un nombre de campo o una condición booleana, pero se obtuvo '{cond_type}'.",
-                            lineno
+                            arg_lineno
                         )
 
         # 4. Filtros condicionales: .if(...) / .ifgroup(...) / .remove(...)
@@ -429,79 +513,99 @@ class SemanticAnalyzer(Visitor):
             if method == 'remove' and not has_prior_filter and not args:
                 self.report_error(
                     "El método '.remove()' requiere una condición '.if(...)' previa o una condición como argumento.",
-                    lineno
+                    call_lineno
                 )
             if method in ('if', 'ifgroup') and not args:
-                self.report_error(f"El método '.{method}()' requiere una condición lógica o relacional.", lineno)
+                self.report_error(f"El método '.{method}()' requiere una condición lógica o relacional.", call_lineno)
                 return
             for arg in args:
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if isinstance(arg, Parameter):
-                    self._validate_parameter_filter(arg, lineno)
+                    self._validate_parameter_filter(arg, arg_lineno)
                 else:
                     cond_type = self.visit(arg)
                     if cond_type not in ('BOOL', 'ERROR'):
                         self.report_error(
                             f"La condición dentro de '.{method}()' debe evaluarse a un valor booleano (BOOL), pero se obtuvo '{cond_type}'.",
-                            lineno
+                            arg_lineno
                         )
 
         # 5. Ordenamiento y Agrupación: .up(...), .down(...), .group(...)
         elif method in ('up', 'down', 'group'):
             if not args:
-                self.report_error(f"El método '.{method}()' requiere al menos un nombre de campo.", lineno)
+                self.report_error(f"El método '.{method}()' requiere al menos un nombre de campo.", call_lineno)
                 return
             for arg in args:
+                arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if not isinstance(arg, Identifier):
                     self.report_error(
                         f"El método '.{method}()' solo acepta nombres de campos (identificadores) como argumentos.",
-                        lineno
+                        arg_lineno
                     )
                 else:
-                    self._resolve_field_or_error(arg.name, lineno)
+                    self._resolve_field_or_error(arg.name, arg_lineno)
 
         # 6. Paginación: .take(N) y .skip(N)
         elif method in ('take', 'skip'):
             if len(args) != 1:
-                self.report_error(f"El método '.{method}()' requiere exactamente 1 argumento entero.", lineno)
+                self.report_error(f"El método '.{method}()' requiere exactamente 1 argumento entero.", call_lineno)
                 return
-            arg_type = self.visit(args[0])
+            arg = args[0]
+            arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
+            arg_type = self.visit(arg)
             if arg_type not in ('NUM', 'ERROR'):
                 self.report_error(
                     f"El método '.{method}()' requiere un número entero (NUM), pero recibió '{arg_type}'.",
-                    lineno
+                    arg_lineno
                 )
-            if isinstance(args[0], UnaryOperation) and args[0].operator == '-':
+                return
+            const_val = self._constant_numeric_value(arg)
+            if const_val is not None:
+                if method == 'take' and const_val <= 0:
+                    self.report_error(
+                        f"El método '.take()' requiere un entero positivo mayor a 0 (no acepta cantidades negativas ni cero), pero se evaluó a {const_val}.",
+                        arg_lineno
+                    )
+                elif method == 'skip' and const_val < 0:
+                    self.report_error(
+                        f"El método '.skip()' requiere un entero mayor o igual a 0 (no acepta cantidades negativas), pero se evaluó a {const_val}.",
+                        arg_lineno
+                    )
+            elif isinstance(arg, UnaryOperation) and arg.operator == '-':
                 self.report_error(
                     f"El método '.{method}()' no acepta cantidades negativas.",
-                    lineno
+                    arg_lineno
                 )
 
         # 7. Funciones de agregación: .count(), .sum(campo), .avg(campo), .max(campo), .min(campo)
         elif method == 'count':
             if len(args) > 1:
-                self.report_error("El método '.count()' acepta como máximo 1 campo opcional.", lineno)
+                self.report_error("El método '.count()' acepta como máximo 1 campo opcional.", call_lineno)
             elif len(args) == 1:
+                arg_lineno = getattr(args[0], 'lineno', call_lineno) or call_lineno
                 if not isinstance(args[0], Identifier):
-                    self.report_error("El argumento de '.count()' debe ser el nombre de un campo.", lineno)
+                    self.report_error("El argumento de '.count()' debe ser el nombre de un campo.", arg_lineno)
                 else:
-                    self._resolve_field_or_error(args[0].name, lineno)
+                    self._resolve_field_or_error(args[0].name, arg_lineno)
 
         elif method in ('sum', 'avg', 'max', 'min'):
             if len(args) != 1 or not isinstance(args[0], Identifier):
+                arg_lineno = getattr(args[0], 'lineno', call_lineno) or call_lineno if args else call_lineno
                 self.report_error(
                     f"La función de agregación '.{method}()' requiere exactamente el nombre de un campo como argumento.",
-                    lineno
+                    arg_lineno
                 )
                 return
-            f_sym = self._resolve_field_or_error(args[0].name, lineno)
+            arg_lineno = getattr(args[0], 'lineno', call_lineno) or call_lineno
+            f_sym = self._resolve_field_or_error(args[0].name, arg_lineno)
             if f_sym and method in ('sum', 'avg') and f_sym.data_type not in NUMERIC_TYPES:
                 self.report_error(
                     f"La función '.{method}()' requiere un campo numérico, pero '{f_sym.name}' es de tipo '{f_sym.data_type}'.",
-                    lineno
+                    arg_lineno
                 )
 
         else:
-            self.report_error(f"El método '.{method}()' no es una operación válida del lenguaje.", lineno)
+            self.report_error(f"El método '.{method}()' no es una operación válida del lenguaje.", call_lineno)
 
     # --- Auxiliares de validación de parámetros y campos ---
     def _resolve_field_or_error(self, field_name: str, lineno: int) -> Optional[FieldSymbol]:
@@ -531,12 +635,30 @@ class SemanticAnalyzer(Visitor):
             return None
         return matches[0][1] if matches else None
 
+    def _validate_decimal_overflow(self, field_name: str, type_args: List[int], value_node, lineno: int):
+        if len(type_args) != 2:
+            return
+        precision, scale = type_args[0], type_args[1]
+        if precision <= 0 or scale < 0 or scale > precision:
+            return
+        val = self._constant_numeric_value(value_node)
+        if val is None or isinstance(val, bool):
+            return
+        max_int_digits = precision - scale
+        limit = 10 ** max_int_digits
+        if abs(val) >= limit:
+            self.report_error(
+                f"Desbordamiento numérico en el campo '{field_name}': el valor {val} excede el límite de parte entera de DECIMAL({precision},{scale}) (máximo permitido: < {limit}).",
+                lineno
+            )
+
     def _validate_parameter_assignment(self, param: Parameter, model: ModelSymbol, is_insert: bool, lineno: int):
+        param_lineno = getattr(param, 'lineno', lineno) or lineno
         f_sym = model.get_field(param.name)
         if f_sym is None:
             self.report_error(
                 f"El campo '{param.name}' no existe en el modelo '{model.name}'.",
-                lineno
+                param_lineno
             )
             return
 
@@ -544,7 +666,7 @@ class SemanticAnalyzer(Visitor):
             accion = "insertar" if is_insert else "modificar"
             self.report_error(
                 f"No se puede {accion} manualmente el campo '{f_sym.name}' porque es de tipo 'auto' (autoincremental).",
-                lineno
+                param_lineno
             )
             return
 
@@ -553,7 +675,7 @@ class SemanticAnalyzer(Visitor):
             if 'REQUIRED' in f_sym.constraints:
                 self.report_error(
                     f"El campo '{f_sym.name}' tiene la restricción 'required' y no admite el valor 'empty' (NULL).",
-                    lineno
+                    param_lineno
                 )
             return
 
@@ -561,21 +683,34 @@ class SemanticAnalyzer(Visitor):
             self.report_error(
                 f"Incompatibilidad de tipos en '{param.name}': el campo es de tipo '{f_sym.data_type}', "
                 f"pero se intentó asignar un valor de tipo '{val_type}'.",
-                lineno
+                param_lineno
             )
+        elif f_sym.data_type == 'DECIMAL' and len(f_sym.type_args) == 2:
+            self._validate_decimal_overflow(f_sym.name, f_sym.type_args, param.value, param_lineno)
 
     def _validate_parameter_filter(self, param: Parameter, lineno: int):
         """Valida un Parameter(campo, valor) cuando se usa como condición de igualdad (ej. .if(nombre = 'Jose'))."""
-        f_sym = self._resolve_field_or_error(param.name, lineno)
+        param_lineno = getattr(param, 'lineno', lineno) or lineno
+        f_sym = self._resolve_field_or_error(param.name, param_lineno)
         val_type = self.visit(param.value)
         if f_sym is not None and not are_types_comparable(f_sym.data_type, val_type, '='):
             self.report_error(
                 f"Comparación inválida en '{param.name} = ...': no se puede comparar el campo '{f_sym.name}' ({f_sym.data_type}) con un valor de tipo '{val_type}'.",
-                lineno
+                param_lineno
             )
 
     # --- 3.3 Inferencia y Verificación de Tipos en Expresiones ---
     def visit_Literal(self, node: Literal) -> str:
+        if node.literal_type.upper() == 'DATE_LITERAL':
+            lineno = getattr(node, 'lineno', 0)
+            try:
+                date.fromisoformat(str(node.value))
+            except ValueError:
+                self.report_error(
+                    f"Fecha calendario inválida '{node.value}': no corresponde a una fecha real del calendario.",
+                    lineno
+                )
+                return 'ERROR'
         return map_literal_to_semantic_type(node.literal_type)
 
     def visit_Identifier(self, node: Identifier) -> str:

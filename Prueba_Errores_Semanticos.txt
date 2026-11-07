@@ -1,6 +1,6 @@
 // =========================================================================
 // ARCHIVO DE PRUEBA DE ERRORES SEMÁNTICOS (SINTÁCTICAMENTE VÁLIDO)
-// Diseñado para verificar las 19 validaciones del Analizador Semántico
+// Diseñado para verificar las validaciones del Analizador Semántico
 // =========================================================================
 
 // --- 1. Errores en Declaración de Modelos (DDL) ---
@@ -63,3 +63,31 @@ Estudiante.find().if((edad > 18) + 2 = 10)
 
 // Error 19: División por cero literal detectada semánticamente
 Estudiante.find().if(edad / 0 > 1)
+
+// --- 3. Validaciones Semánticas Avanzadas (Modo Pro) ---
+
+Model Curso:
+	id_curso: auto main key
+	costo: decimal(4,2)
+	fecha_inicio: string
+
+// Error 20: Mezcla incompatible de '.modify()' y '.remove()' en la misma cadena
+Estudiante.modify(edad = 20).remove(edad = 20)
+
+// Error 21: Filtro '.if()' colocado después de una operación mutadora '.modify()'
+Estudiante.modify(edad = 21).if(edad = 18)
+
+// Error 22: Cláusula única duplicada en la misma cadena ('.take()' repetido)
+Estudiante.find().take(5).take(10)
+
+// Error 23: Auto-enlace en '.link()' apuntando al propio modelo base
+Estudiante.find().link(Estudiante)
+
+// Error 24: Evaluación de expresión constante inválida (<= 0) en '.take()'
+Estudiante.find().take(2 - 5)
+
+// Error 25: Desbordamiento numérico al asignar 150.00 a un campo DECIMAL(4,2) (máximo 99.99)
+Curso.new(costo = 150.00)
+
+// Error 26: Fecha calendario inválida (30 de febrero no existe en el calendario)
+Curso.new(fecha_inicio = 2026-02-30)

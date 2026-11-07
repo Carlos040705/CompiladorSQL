@@ -72,12 +72,17 @@ if __name__ == "__main__":
     else:
         archivos_default = [
             "Prueba.txt",
-            "Prueba_Completa_Valida.txt",
-            "Prueba_Expresiones_y_Cadenas.txt",
-            "Prueba_Errores_Sintacticos.txt",
+            "prueba_completa_valida.txt",
+            "prueba_expresiones_y_cadenas.txt",
+            "prueba_errores_sintacticos.txt",
             "Prueba_Errores_Semanticos.txt",
         ]
-        encontrados = [ROOT_DIR / nombre for nombre in archivos_default if (ROOT_DIR / nombre).is_file()]
+        archivos_raiz = {p.name.lower(): p for p in ROOT_DIR.iterdir() if p.is_file()}
+        encontrados = [
+            archivos_raiz[nombre.lower()]
+            for nombre in archivos_default
+            if nombre.lower() in archivos_raiz
+        ]
         if not encontrados:
             print("No se encontraron archivos de prueba en la raíz del proyecto.")
         for ruta in encontrados:

@@ -98,6 +98,57 @@ A.find().link(B).link(C).up(shared)
         self.assertIn("Fase Sintáctica] Omitida", result)
         self.assertIn("Fase Semántica] Omitida", result)
 
+    def test_mixing_modify_and_remove_is_rejected(self):
+        source = "model A:\n\tedad: num\nA.modify(edad = 20).remove(edad = 20)\n"
+        errors = analyze_source(source)
+        self.assertTrue(any(".modify()" in error and ".remove()" in error for error in errors))
+
+    def test_mixing_mutations_with_query_clauses_is_rejected(self):
+        source = "model A:\n\tedad: num\nA.modify(edad = 20).take(5)\n"
+        errors = analyze_source(source)
+        self.assertTrue(any("no se puede combinar" in error for error in errors))
+
+    def test_if_after_modify_or_remove_is_rejected(self):
+        errors_modify = analyze_source("model A:\n\tid: num\n\tedad: num\nA.modify(edad = 20).if(id = 1)\n")
+        errors_remove = analyze_source("model A:\n\tid: num\n\tedad: num\nA.remove(id = 1).if(edad > 18)\n")
+        self.assertTrue(any("debe preceder" in error for error in errors_modify))
+        self.assertTrue(any("debe preceder" in error for error in errors_remove))
+
+    def test_duplicate_single_clauses_are_rejected(self):
+        errors_take = analyze_source("model A:\n\ta: num\nA.find().take(5).take(10)\n")
+        errors_group = analyze_source("model A:\n\ta: num\n\tb: num\nA.find().group(a).group(b)\n")
+        self.assertTrue(any("Cláusula duplicada" in error and ".take()" in error for error in errors_take))
+        self.assertTrue(any("Cláusula duplicada" in error and ".group()" in error for error in errors_group))
+
+    def test_self_link_and_duplicate_link_are_rejected(self):
+        self_link_errors = analyze_source("model A:\n\tid: num\nA.find().link(A)\n")
+        dup_link_errors = analyze_source(
+            "model A:\n\tid: num\nmodel B:\n\tid_b: num\nA.find().link(B).link(B)\n"
+        )
+        self.assertTrue(any("Auto-enlace" in error or "ámbito activo" in error for error in self_link_errors))
+        self.assertTrue(any("Enlace duplicado" in error or "ámbito activo" in error for error in dup_link_errors))
+
+    def test_take_and_skip_constant_expression_evaluation(self):
+        errors_take_zero = analyze_source("model A:\n\tid: num\nA.find().take(0)\n")
+        errors_take_expr = analyze_source("model A:\n\tid: num\nA.find().take(2 - 5)\n")
+        errors_skip_neg = analyze_source("model A:\n\tid: num\nA.find().skip(3 - 10)\n")
+        valid_skip_zero = analyze_source("model A:\n\tid: num\nA.find().skip(0)\n")
+        self.assertTrue(any(".take()" in error for error in errors_take_zero))
+        self.assertTrue(any(".take()" in error for error in errors_take_expr))
+        self.assertTrue(any(".skip()" in error for error in errors_skip_neg))
+        self.assertEqual(valid_skip_zero, [])
+
+    def test_decimal_overflow_is_rejected(self):
+        source = "model A:\n\tprecio: decimal(4, 2)\nA.new(precio = 150.00)\n"
+        errors = analyze_source(source)
+        self.assertTrue(any("Desbordamiento" in error and "DECIMAL(4,2)" in error for error in errors))
+
+    def test_invalid_calendar_date_literal_is_rejected(self):
+        source = "model A:\n\tfecha: string\nA.new(fecha = 2026-02-30)\n"
+        errors = analyze_source(source)
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(any("Fecha calendario inválida" in error and "2026-02-30" in error for error in errors))
+
 
 if __name__ == "__main__":
     unittest.main()
