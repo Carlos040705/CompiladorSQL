@@ -1,0 +1,65 @@
+// =========================================================================
+// ARCHIVO DE PRUEBA DE ERRORES SEMÁNTICOS (SINTÁCTICAMENTE VÁLIDO)
+// Diseñado para verificar las 19 validaciones del Analizador Semántico
+// =========================================================================
+
+// --- 1. Errores en Declaración de Modelos (DDL) ---
+Model Estudiante:
+	matricula: auto main key
+	// Error 1: Múltiples 'main key' en el mismo modelo
+	id_alterno: num main key
+	nombre: string required
+	// Error 2: Campo duplicado dentro del mismo modelo
+	nombre: text
+	edad: num required default = 18
+	// Error 3: Tipo incompatible en valor por defecto (NUM vs STRING)
+	semestre: num default = "Primero"
+	// Error 4: Precisión y escala inválidas en Decimal(p, s) (escala > precisión)
+	promedio: decimal(4,8)
+	// Error 5: Campo 'auto' no puede tener valor 'default'
+	folio: auto default = 1
+	// Error 6: Campo 'required' con valor por defecto 'empty' (nulo)
+	curp: string required default = empty
+	becado: bool default = false
+
+// Error 7: Modelo duplicado (ya declarado previamente)
+Model Estudiante:
+	id: auto main key
+
+// --- 2. Errores en Operaciones de Base de Datos (DML y Expresiones) ---
+
+// Error 8: Operación sobre un modelo no declarado
+Profesor.find()
+
+// Error 9: Intento de insertar manualmente un campo 'auto'
+Estudiante.new(matricula = 100, nombre = "Ana", curp = "CURP123")
+
+// Error 10: Falta el campo obligatorio 'nombre' (required) en inserción
+Estudiante.new(edad = 20, curp = "CURP123")
+
+// Error 11: Asignación de 'empty' (NULL) a un campo 'required'
+Estudiante.new(nombre = empty, curp = "CURP123")
+
+// Error 12: Incompatibilidad de tipos en asignación de parámetro (NUM vs STRING)
+Estudiante.modify(edad = "veinte")
+
+// Error 13: Referencia a un campo inexistente en el modelo
+Estudiante.find(telefono)
+
+// Error 14: Referencia a un modelo inexistente en '.link()'
+Estudiante.find().link(Departamento)
+
+// Error 15: Uso de '.ifgroup()' (HAVING) sin '.group()' (GROUP BY) en la cadena
+Estudiante.find(semestre).ifgroup(semestre > 2)
+
+// Error 16: Cantidad negativa en paginación '.take()'
+Estudiante.find().take(-5)
+
+// Error 17: Función de agregación numérica '.sum()' sobre un campo de texto (STRING)
+Estudiante.sum(nombre)
+
+// Error 18: Operación aritmética inválida mezclando expresión booleana con número
+Estudiante.find().if((edad > 18) + 2 = 10)
+
+// Error 19: División por cero literal detectada semánticamente
+Estudiante.find().if(edad / 0 > 1)

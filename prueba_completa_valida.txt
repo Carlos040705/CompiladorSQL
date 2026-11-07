@@ -21,6 +21,7 @@ Model Estudiante:
 	promedio: decimal(4,2) default = 0.0
 	saldo_adeudo: decimal(10,2) default = -10.50
 	becado: bool default = false
+	activo: bool default = true
 	fecha_ingreso: string default = 2026-08-15
 
 model Curso:

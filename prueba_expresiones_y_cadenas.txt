@@ -1,8 +1,25 @@
 // =========================================================================
 // PRUEBA DE ESTRÉS: JERARQUÍA DE EXPRESIONES Y CADENAS LARGAS DE MÉTODOS
-// Enfocada en validar el árbol sintáctico (AST) para:
+// Enfocada en validar el árbol sintáctico (AST) y semántico para:
 // () > OP_UNARIO > OP_MULT_DIV_MOD > OP_SUMA_RESTA > OP_RELACIONAL > NOT > AND > OR
 // =========================================================================
+
+Model Estudiante:
+	matricula: auto main key
+	nombre: string
+	edad: num
+	semestre: num
+	promedio: decimal(10,2)
+	saldo: decimal(10,2)
+	creditos: num
+	activo: bool
+	becado: bool
+
+Model Curso:
+	id_curso: auto main key
+	nombre_curso: string
+	creditos: num
+	activo: bool
 
 // 1. Precedencia aritmética y asociatividad por la izquierda
 // Debe construir BinaryOperation anidados a la izquierda: ((100 - 20) - 10)
