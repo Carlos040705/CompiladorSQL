@@ -16,6 +16,9 @@ del ratón con la posición preservada al llegar al final, y altura ajustable
 arrastrando el separador superior. Los botones de
 compilación y el árbol sintáctico son solamente visuales por ahora. En la terminal,
 `Ctrl+C` copia el texto seleccionado o interrumpe el proceso si no hay selección.
+Las líneas largas del editor no se ajustan automáticamente y pueden recorrerse
+horizontalmente; el explorador y el árbol sintáctico también permiten desplazarse
+hacia los lados cuando su contenido excede el ancho del panel.
 
 Instala las dependencias con `python -m pip install -r requirements.txt` antes de
 abrir la interfaz. La terminal integrada requiere Windows.
@@ -37,7 +40,6 @@ Las pruebas del analizador semántico se ejecutan con:
 ```powershell
 python -m unittest discover -s Main -p "test_*.py"
 ```
-
 
 
 

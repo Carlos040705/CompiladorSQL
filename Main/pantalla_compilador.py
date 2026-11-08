@@ -67,6 +67,7 @@ def iniciar_interfaz(page: ft.Page):
     terminal_stream = pyte.Stream(terminal_screen)
     pressed_modifiers: set[str] = set()
     terminal_height = 250
+    terminal_is_resizing = False
     workspace_height = 0
     terminal_has_focus = True
     terminal_refocus_pending = False
@@ -75,9 +76,13 @@ def iniciar_interfaz(page: ft.Page):
     terminal_row_controls: list[ft.Text] = []
     terminal_selections: dict[int, str] = {}
     terminal_resize_handle: asyncio.TimerHandle | None = None
+    terminal_panel_update_handle: asyncio.TimerHandle | None = None
     pending_terminal_size: tuple[int, int, float] | None = None
     editor_scroll_offset = 0.0
     editor_viewport_height = 0.0
+    editor_horizontal_scroll_offset = 0.0
+    editor_horizontal_viewport_width = 800.0
+    editor_text_content_width = 800.0
     editor_line_height = 18
 
     file_picker = ft.FilePicker()
@@ -90,6 +95,14 @@ def iniciar_interfaz(page: ft.Page):
         size=12,
         color=MUTED,
         font_family="Segoe UI",
+    )
+    terminal_prompt_label = ft.Text(
+        f"PS {root_directory}>",
+        size=10,
+        color=MUTED,
+        font_family="Consolas",
+        max_lines=1,
+        overflow=ft.TextOverflow.ELLIPSIS,
     )
     tabs_bar = ft.Row(
         controls=[],
@@ -130,6 +143,7 @@ def iniciar_interfaz(page: ft.Page):
         multiline=True,
         min_lines=1,
         max_lines=2,
+        width=editor_text_content_width,
         expand=False,
         border=ft.InputBorder.NONE,
         bgcolor="transparent",
@@ -160,22 +174,70 @@ def iniciar_interfaz(page: ft.Page):
         nonlocal editor_viewport_height
         editor_viewport_height = event.height
 
+    def actualizar_desplazamiento_horizontal_editor(event):
+        nonlocal editor_horizontal_scroll_offset
+        editor_horizontal_scroll_offset = event.pixels
+
+    def actualizar_ancho_editor(contents: str):
+        nonlocal editor_text_content_width
+        longest_line = max(
+            (len(line.expandtabs(4)) for line in contents.splitlines()),
+            default=0,
+        )
+        required_width = max(
+            editor_horizontal_viewport_width,
+            longest_line * 8.5 + 28,
+        )
+        if abs(required_width - editor_text_content_width) < 1:
+            return
+        editor_text_content_width = required_width
+        editor_text_view.width = required_width
+        editor.width = required_width
+        editor_preview.width = required_width
+        editor_preview_container.width = required_width
+
+    def redimensionar_vista_horizontal_editor(event):
+        nonlocal editor_horizontal_viewport_width
+        if abs(event.width - editor_horizontal_viewport_width) < 1:
+            return
+        editor_horizontal_viewport_width = event.width
+        actualizar_ancho_editor(editor.value or "")
+        editor_text_view.update()
+        editor_horizontal_scroll.update()
+
     editor_preview = ft.Text(
         value="",
         size=14,
         font_family="Consolas",
+        no_wrap=True,
         style=ft.TextStyle(
             height=editor_line_height / 14,
             color=TEXT,
         ),
-        expand=True,
+        width=editor_text_content_width,
     )
     editor_preview_container = ft.Container(
         content=editor_preview,
         padding=ft.Padding.only(left=8, top=10, right=12, bottom=12),
-        expand=True,
+        width=editor_text_content_width,
         ignore_interactions=True,
         visible=False,
+    )
+    editor_text_view = ft.Stack(
+        controls=[
+            editor_preview_container,
+            editor,
+        ],
+        fit=ft.StackFit.EXPAND,
+        width=editor_text_content_width,
+    )
+    editor_horizontal_scroll = ft.Row(
+        controls=[editor_text_view],
+        spacing=0,
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+        on_scroll=lambda event: actualizar_desplazamiento_horizontal_editor(event),
+        on_size_change=lambda event: redimensionar_vista_horizontal_editor(event),
     )
     editor_content = ft.Row(
         [
@@ -186,14 +248,7 @@ def iniciar_interfaz(page: ft.Page):
                 alignment=ft.Alignment.TOP_RIGHT,
             ),
             ft.Container(
-                content=ft.Stack(
-                    controls=[
-                        editor_preview_container,
-                        editor,
-                    ],
-                    fit=ft.StackFit.EXPAND,
-                    expand=True,
-                ),
+                content=editor_horizontal_scroll,
                 expand=True,
                 bgcolor="transparent",
             ),
@@ -224,6 +279,12 @@ def iniciar_interfaz(page: ft.Page):
     )
     explorer_body = ft.Column(
         spacing=1,
+        scroll=ft.ScrollMode.AUTO,
+        width=246,
+    )
+    explorer_horizontal_scroll = ft.Row(
+        controls=[explorer_body],
+        spacing=0,
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
@@ -296,7 +357,8 @@ def iniciar_interfaz(page: ft.Page):
         )
         contents = editor.value or ""
         line_count = contents.count("\n") + 1
-        editor.max_lines = line_count + 1
+        actualizar_ancho_editor(contents)
+        editor.max_lines = line_count + 2
         line_numbers.controls = [
             ft.Container(
                 content=ft.Text(
@@ -313,10 +375,11 @@ def iniciar_interfaz(page: ft.Page):
             )
             for number in range(1, line_count + 1)
         ]
-        content_height = line_count * editor_line_height + 30
+        content_height = (line_count + 2) * editor_line_height + 22
         line_numbers.height = content_height
         editor.height = content_height
         editor_content.height = content_height
+        editor_text_view.height = content_height
         if search_bar.visible:
             actualizar_vista_busqueda()
         actualizar_posicion_cursor(editor.selection)
@@ -331,9 +394,10 @@ def iniciar_interfaz(page: ft.Page):
         column = len(preceding_text) - preceding_text.rfind("\n")
         cursor_position_label.value = f"Ln {line}, Col {column}"
 
-    async def al_cambiar_seleccion_editor(event):
-        actualizar_posicion_cursor(event.selection)
-        preceding_text = (editor.value or "")[:event.selection.extent_offset]
+    async def revelar_posicion_editor(offset: int):
+        contents = editor.value or ""
+        offset = max(0, min(offset, len(contents)))
+        preceding_text = contents[:offset]
         line = preceding_text.count("\n") + 1
         line_top = (line - 1) * editor_line_height + 10
         if editor_viewport_height and line_top < editor_scroll_offset:
@@ -345,6 +409,32 @@ def iniciar_interfaz(page: ft.Page):
         ):
             target = line_top - editor_viewport_height + editor_line_height
             await editor_scroll.scroll_to(offset=max(0, target), duration=120)
+        line_start = preceding_text.rfind("\n") + 1
+        column = len(preceding_text[line_start:].expandtabs(4))
+        caret_x = column * 8.5 + 8
+        if caret_x < editor_horizontal_scroll_offset:
+            await editor_horizontal_scroll.scroll_to(
+                offset=max(0, caret_x - 8),
+                duration=120,
+            )
+        elif (
+            editor_horizontal_viewport_width
+            and caret_x
+            > editor_horizontal_scroll_offset + editor_horizontal_viewport_width - 24
+        ):
+            target = (
+                caret_x
+                - editor_horizontal_viewport_width
+                + 24
+            )
+            await editor_horizontal_scroll.scroll_to(
+                offset=max(0, target),
+                duration=120,
+            )
+
+    async def al_cambiar_seleccion_editor(event):
+        actualizar_posicion_cursor(event.selection)
+        await revelar_posicion_editor(event.selection.extent_offset)
         page.update(cursor_position_label)
 
     search_matches: list[tuple[int, int]] = []
@@ -410,17 +500,7 @@ def iniciar_interfaz(page: ft.Page):
             f"{active_search_match + 1} de {len(search_matches)}"
         )
         actualizar_vista_busqueda()
-        line = (editor.value or "")[:start].count("\n") + 1
-        line_top = (line - 1) * editor_line_height + 10
-        if editor_viewport_height and line_top < editor_scroll_offset:
-            await editor_scroll.scroll_to(offset=max(0, line_top), duration=120)
-        elif (
-            editor_viewport_height
-            and line_top + editor_line_height
-            > editor_scroll_offset + editor_viewport_height
-        ):
-            target = line_top - editor_viewport_height + editor_line_height
-            await editor_scroll.scroll_to(offset=max(0, target), duration=120)
+        await revelar_posicion_editor(start)
         page.update(editor_preview, editor_preview_container, search_status)
 
     async def actualizar_busqueda(_=None):
@@ -747,8 +827,16 @@ def iniciar_interfaz(page: ft.Page):
         rendered_history_ids = history_ids
 
         if rebuild or history_ids != previous_history_ids or changed_rows:
+            prompt_row = terminal_screen.buffer[terminal_screen.cursor.y]
+            prompt_line = "".join(
+                prompt_row[x].data for x in range(terminal_screen.cursor.x)
+            )
+            prompt_match = re.search(r"(PS\s+.+?>)", prompt_line)
+            if prompt_match:
+                terminal_prompt_label.value = prompt_match.group(1)
+                terminal_prompt_label.tooltip = prompt_match.group(1)
             terminal_output.controls = list(reversed(terminal_row_controls))
-            page.update(terminal_output)
+            page.update(terminal_output, terminal_prompt_label)
             if terminal_refocus_pending and terminal_has_focus:
                 terminal_refocus_pending = False
                 page.run_task(terminal_listener.focus)
@@ -1040,6 +1128,8 @@ def iniciar_interfaz(page: ft.Page):
         rows = max(3, min(80, int(event.height / 18)))
         pending_terminal_size = (columns, rows, content_width)
 
+        if terminal_is_resizing:
+            return
         if terminal_resize_handle is not None:
             terminal_resize_handle.cancel()
         try:
@@ -1050,7 +1140,13 @@ def iniciar_interfaz(page: ft.Page):
             terminal_resize_handle = loop.call_later(0.12, aplicar_redimension_terminal)
 
     def finalizar_redimension_terminal(_):
-        nonlocal terminal_resize_handle
+        nonlocal terminal_resize_handle, terminal_panel_update_handle
+        nonlocal terminal_is_resizing
+        terminal_is_resizing = False
+        if terminal_panel_update_handle is not None:
+            terminal_panel_update_handle.cancel()
+            terminal_panel_update_handle = None
+            terminal_panel.update()
         if terminal_resize_handle is not None:
             terminal_resize_handle.cancel()
         try:
@@ -1058,7 +1154,14 @@ def iniciar_interfaz(page: ft.Page):
         except RuntimeError:
             aplicar_redimension_terminal()
         else:
-            terminal_resize_handle = loop.call_later(0.08, aplicar_redimension_terminal)
+            terminal_resize_handle = loop.call_later(0.15, aplicar_redimension_terminal)
+
+    def iniciar_redimension_terminal(_):
+        nonlocal terminal_is_resizing, terminal_resize_handle
+        terminal_is_resizing = True
+        if terminal_resize_handle is not None:
+            terminal_resize_handle.cancel()
+            terminal_resize_handle = None
 
     def obtener_altura_maxima_terminal():
         return max(130, workspace_height + terminal_height - 130)
@@ -1073,7 +1176,7 @@ def iniciar_interfaz(page: ft.Page):
             page.update()
 
     def redimensionar_terminal(event):
-        nonlocal terminal_height
+        nonlocal terminal_height, terminal_panel_update_handle
         delta = event.primary_delta
         if delta is None and event.local_delta is not None:
             delta = event.local_delta.dy
@@ -1085,6 +1188,21 @@ def iniciar_interfaz(page: ft.Page):
             min(maximum, terminal_height - delta),
         )
         terminal_panel.height = terminal_height
+        if terminal_panel_update_handle is not None:
+            terminal_panel_update_handle.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            terminal_panel.update()
+        else:
+            terminal_panel_update_handle = loop.call_later(
+                0.03,
+                actualizar_vista_terminal_redimensionada,
+            )
+
+    def actualizar_vista_terminal_redimensionada():
+        nonlocal terminal_panel_update_handle
+        terminal_panel_update_handle = None
         terminal_panel.update()
 
     async def enfocar_terminal(_):
@@ -1129,13 +1247,14 @@ def iniciar_interfaz(page: ft.Page):
         selected: bool = False,
         on_click=None,
         leading_icon=None,
+        horizontal_scroll: bool = False,
     ):
         prefix = (
             ft.Icon(leading_icon, size=16, color=MUTED)
             if leading_icon is not None
             else ft.Container(width=16)
         )
-        return ft.Container(
+        row = ft.Container(
             content=ft.Row(
                 [
                     prefix,
@@ -1145,11 +1264,17 @@ def iniciar_interfaz(page: ft.Page):
                         size=13,
                         color=TEXT if selected else color,
                         max_lines=1,
-                        overflow=ft.TextOverflow.ELLIPSIS,
-                        expand=True,
+                        overflow=(
+                            ft.TextOverflow.CLIP
+                            if horizontal_scroll
+                            else ft.TextOverflow.ELLIPSIS
+                        ),
+                        no_wrap=horizontal_scroll,
+                        expand=not horizontal_scroll,
                     ),
                 ],
                 spacing=7,
+                tight=horizontal_scroll,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.only(left=8 + depth * 14, right=7, top=5, bottom=5),
@@ -1157,7 +1282,12 @@ def iniciar_interfaz(page: ft.Page):
             border_radius=4,
             on_click=on_click,
             ink=on_click is not None,
+            data=(label, depth),
         )
+        return row
+
+    def crear_fila_arbol_sintactico(*args, **kwargs):
+        return crear_fila_arbol(*args, **kwargs, horizontal_scroll=True)
 
     def dibujar_arbol_directorios():
         rows = []
@@ -1178,6 +1308,7 @@ def iniciar_interfaz(page: ft.Page):
                     ft.Icons.FOLDER_OPEN if is_expanded else ft.Icons.FOLDER,
                     depth,
                     color="#f0c75e",
+                    horizontal_scroll=True,
                     leading_icon=(
                         ft.Icons.KEYBOARD_ARROW_DOWN
                         if is_expanded
@@ -1220,12 +1351,25 @@ def iniciar_interfaz(page: ft.Page):
                         depth + 1,
                         color=BLUE if file_icon == ft.Icons.CODE else "#a9b8cb",
                         selected=entry == active_path,
+                        horizontal_scroll=True,
                         on_click=lambda _, selected_path=entry: abrir_ruta(selected_path),
                     )
                 )
 
         agregar_directorio(root_directory, 0, is_root=True)
         explorer_body.controls = rows
+        explorer_body.width = max(
+            246,
+            max(
+                (
+                    len(label) * 8 + 62 + depth * 14
+                    for row in rows
+                    if isinstance(row.data, tuple)
+                    for label, depth in [row.data]
+                ),
+                default=246,
+            ),
+        )
         explorer_body.update()
 
     def abrir_ruta(path: Path):
@@ -1501,7 +1645,7 @@ def iniciar_interfaz(page: ft.Page):
                     crear_boton_icono(ft.Icons.CREATE_NEW_FOLDER, "Abrir carpeta", elegir_carpeta),
                 ),
                 ft.Container(
-                    content=explorer_body,
+                    content=explorer_horizontal_scroll,
                     padding=ft.Padding.only(top=5, bottom=6),
                     expand=True,
                 ),
@@ -1568,7 +1712,7 @@ def iniciar_interfaz(page: ft.Page):
 
     syntax_tree = ft.Column(
         [
-            crear_fila_arbol(label, icon, depth, color=color)
+            crear_fila_arbol_sintactico(label, icon, depth, color=color)
             for label, icon, color, depth in [
                 ("Programa", ft.Icons.ACCOUNT_TREE, "#55a8ff", 0),
                 ("Modelo", ft.Icons.DATA_OBJECT, "#c084fc", 1),
@@ -1583,6 +1727,12 @@ def iniciar_interfaz(page: ft.Page):
         ],
         spacing=1,
         scroll=ft.ScrollMode.AUTO,
+        width=270,
+    )
+    syntax_tree_view = ft.Row(
+        controls=[syntax_tree],
+        spacing=0,
+        scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
 
@@ -1591,7 +1741,7 @@ def iniciar_interfaz(page: ft.Page):
             [
                 crear_encabezado_panel(ft.Icons.ACCOUNT_TREE, "ÁRBOL SINTÁCTICO"),
                 ft.Container(
-                    content=syntax_tree,
+                    content=syntax_tree_view,
                     padding=ft.Padding.only(top=9, bottom=7),
                     expand=True,
                 ),
@@ -1604,6 +1754,20 @@ def iniciar_interfaz(page: ft.Page):
         border=ft.Border.all(1, BORDER),
         border_radius=5,
     )
+
+    def ajustar_ancho_arbol_sintactico(nodes):
+        required_width = max(
+            (
+                len(label) * 8 + 62 + depth * 14
+                for node in nodes
+                if isinstance(node.data, tuple)
+                for label, depth in [node.data]
+            ),
+            default=270,
+        )
+        syntax_tree.width = max(270, required_width)
+
+    ajustar_ancho_arbol_sintactico(syntax_tree.controls)
 
     terminal_output.scroll = ft.ScrollMode.AUTO
     terminal_output.auto_scroll = False
@@ -1650,11 +1814,7 @@ def iniciar_interfaz(page: ft.Page):
                     expand=True,
                 ),
                 ft.Container(
-                    content=ft.Text(
-                        "Escribe un comando de PowerShell y pulsa Enter",
-                        size=10,
-                        color=MUTED,
-                    ),
+                    content=terminal_prompt_label,
                     padding=ft.Padding.only(left=12, top=3, bottom=4),
                     border=ft.Border.only(top=ft.BorderSide(1, BORDER)),
                     on_click=enfocar_terminal,
@@ -1682,6 +1842,7 @@ def iniciar_interfaz(page: ft.Page):
             alignment=ft.Alignment.CENTER,
         ),
         mouse_cursor=ft.MouseCursor.RESIZE_UP_DOWN,
+        on_vertical_drag_start=iniciar_redimension_terminal,
         on_vertical_drag_update=redimensionar_terminal,
         on_vertical_drag_end=finalizar_redimension_terminal,
     )
@@ -1711,12 +1872,14 @@ def iniciar_interfaz(page: ft.Page):
 
     def actualizar_arbol_sintactico(ast_root: Program | None, errores_lista: list[str] | None = None):
         nodos_ui = [
-            crear_fila_arbol("Programa", ft.Icons.ACCOUNT_TREE, 0, color="#55a8ff")
+            crear_fila_arbol_sintactico(
+                "Programa", ft.Icons.ACCOUNT_TREE, 0, color="#55a8ff"
+            )
         ]
 
         if errores_lista:
             nodos_ui.append(
-                crear_fila_arbol(
+                crear_fila_arbol_sintactico(
                     f"Errores detectados ({len(errores_lista)})",
                     ft.Icons.ERROR_OUTLINE,
                     1,
@@ -1725,20 +1888,28 @@ def iniciar_interfaz(page: ft.Page):
             )
             for err in errores_lista[:15]:
                 nodos_ui.append(
-                    crear_fila_arbol(err, ft.Icons.WARNING_AMBER, 2, color="#f0b45b")
+                    crear_fila_arbol_sintactico(
+                        err, ft.Icons.WARNING_AMBER, 2, color="#f0b45b"
+                    )
                 )
 
         if ast_root and getattr(ast_root, "statements", None):
             for stmt in ast_root.statements:
                 if isinstance(stmt, ModelDeclaration):
                     nodos_ui.append(
-                        crear_fila_arbol("Modelo", ft.Icons.DATA_OBJECT, 1, color="#c084fc")
+                        crear_fila_arbol_sintactico(
+                            "Modelo", ft.Icons.DATA_OBJECT, 1, color="#c084fc"
+                        )
                     )
                     nodos_ui.append(
-                        crear_fila_arbol(stmt.name, ft.Icons.TABLE_CHART, 2, color="#55a8ff")
+                        crear_fila_arbol_sintactico(
+                            stmt.name, ft.Icons.TABLE_CHART, 2, color="#55a8ff"
+                        )
                     )
                     nodos_ui.append(
-                        crear_fila_arbol("Atributos", ft.Icons.FOLDER, 3, color="#4ade80")
+                        crear_fila_arbol_sintactico(
+                            "Atributos", ft.Icons.FOLDER, 3, color="#4ade80"
+                        )
                     )
                     for campo in stmt.fields:
                         args_str = (
@@ -1757,7 +1928,7 @@ def iniciar_interfaz(page: ft.Page):
                                 restr_list.append(c.constraint_type.lower())
                         restr_str = f" [{', '.join(restr_list)}]" if restr_list else ""
                         nodos_ui.append(
-                            crear_fila_arbol(
+                            crear_fila_arbol_sintactico(
                                 f"{campo.name} : {tipo_str}{restr_str}",
                                 ft.Icons.CIRCLE,
                                 4,
@@ -1770,7 +1941,7 @@ def iniciar_interfaz(page: ft.Page):
                         for call in stmt.calls
                     )
                     nodos_ui.append(
-                        crear_fila_arbol(
+                        crear_fila_arbol_sintactico(
                             f"{stmt.model_name}.{cadena_resumen}",
                             ft.Icons.DATA_OBJECT,
                             1,
@@ -1782,7 +1953,7 @@ def iniciar_interfaz(page: ft.Page):
                             resumir_expresion_ast(a) for a in (call.arguments or [])
                         )
                         nodos_ui.append(
-                            crear_fila_arbol(
+                            crear_fila_arbol_sintactico(
                                 f".{call.method}({args_txt})",
                                 ft.Icons.SUBDIRECTORY_ARROW_RIGHT,
                                 2,
@@ -1791,6 +1962,7 @@ def iniciar_interfaz(page: ft.Page):
                         )
 
         syntax_tree.controls = nodos_ui
+        ajustar_ancho_arbol_sintactico(nodos_ui)
         try:
             syntax_tree.update()
         except Exception:
