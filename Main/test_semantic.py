@@ -1,13 +1,26 @@
 import contextlib
 import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+_SITE_PACKAGES = Path(__file__).resolve().parent.parent / "env" / "Lib" / "site-packages"
+if _SITE_PACKAGES.is_dir() and str(_SITE_PACKAGES) not in sys.path:
+    sys.path.insert(0, str(_SITE_PACKAGES))
+
+from ast_nodes import ModelDeclaration
+from codegen import SQLCodeGenerator
 from lexer import errores_lexicos, lexer
 from main import analizar_archivo
 from parser import errores_sintacticos, parser
-from semantic import SemanticAnalyzer
+from semantic import (
+    SemanticAnalyzer,
+    SymbolTable,
+    build_context_symbol_table,
+    extract_context_models,
+    normalize_dsl_fragment,
+)
 
 
 def analyze_source(source: str):
@@ -148,6 +161,132 @@ A.find().link(B).link(C).up(shared)
         errors = analyze_source(source)
         self.assertEqual(len(errors), 1)
         self.assertTrue(any("Fecha calendario inválida" in error and "2026-02-30" in error for error in errors))
+
+    def test_clipboard_selection_on_prueba_txt_with_mixed_indentation(self):
+        root_dir = Path(__file__).resolve().parent.parent
+        prueba_code = (root_dir / "Prueba.txt").read_text(encoding="utf-8")
+        selection = '   estudiante.new(nombre = "Jose Cruz Castillo", edad = 67, peso = 160.00)'
+
+        cleaned_selection = normalize_dsl_fragment(selection)
+        context_models = extract_context_models(prueba_code)
+        session_symbols = build_context_symbol_table(prueba_code)
+
+        self.assertEqual(len(context_models), 1)
+        self.assertIsNotNone(session_symbols.get_model("estudiante"))
+
+        errores_lexicos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(cleaned_selection)
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+        self.assertEqual(errores_lexicos, [])
+
+        errores_sintacticos.clear()
+        token_iter = iter(tokens)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ast_sel = parser.parse(tokenfunc=lambda: next(token_iter, None))
+        self.assertEqual(errores_sintacticos, [])
+
+        analyzer = SemanticAnalyzer()
+        with contextlib.redirect_stdout(io.StringIO()):
+            sem_errors, sym_table = analyzer.analyze(
+                ast_sel,
+                context_models=context_models,
+                context_code=prueba_code,
+                persistent_symbols=session_symbols,
+            )
+        self.assertEqual(sem_errors, [])
+
+        explicit_models = {
+            stmt.name.lower()
+            for stmt in ast_sel.statements
+            if isinstance(stmt, ModelDeclaration)
+        }
+        sql_list = SQLCodeGenerator(sym_table).generate(
+            ast_sel,
+            allowed_model_declarations=explicit_models,
+        )
+        self.assertEqual(len(sql_list), 1)
+        self.assertNotIn("CREATE TABLE", sql_list.script.upper())
+        self.assertEqual(
+            sql_list[0],
+            "INSERT INTO estudiante (nombre, edad, peso) VALUES ('Jose Cruz Castillo', 67, 160.0);",
+        )
+
+    def test_clipboard_selection_on_prueba_completa_valida_with_link(self):
+        root_dir = Path(__file__).resolve().parent.parent
+        full_code = (root_dir / "prueba_completa_valida.txt").read_text(encoding="utf-8")
+        selection = "Estudiante.find(semestre).link(Curso).group(semestre).ifgroup(semestre > 3).up(semestre)"
+
+        cleaned_selection = normalize_dsl_fragment(selection)
+        session_symbols = SymbolTable()
+        session_symbols.merge_from(build_context_symbol_table(full_code), overwrite=True)
+
+        errores_lexicos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(cleaned_selection)
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+        self.assertEqual(errores_lexicos, [])
+
+        errores_sintacticos.clear()
+        token_iter = iter(tokens)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ast_sel = parser.parse(tokenfunc=lambda: next(token_iter, None))
+        self.assertEqual(errores_sintacticos, [])
+
+        analyzer = SemanticAnalyzer()
+        with contextlib.redirect_stdout(io.StringIO()):
+            sem_errors, sym_table = analyzer.analyze(
+                ast_sel,
+                persistent_symbols=session_symbols,
+            )
+        self.assertEqual(sem_errors, [])
+
+        sql_list = SQLCodeGenerator(sym_table).generate(
+            ast_sel,
+            allowed_model_declarations=set(),
+        )
+        self.assertEqual(len(sql_list), 1)
+        self.assertNotIn("CREATE TABLE", sql_list.script.upper())
+        self.assertEqual(
+            sql_list[0],
+            "SELECT semestre FROM estudiante INNER JOIN curso ON estudiante.matricula = curso.id_estudiante GROUP BY semestre HAVING semestre > 3 ORDER BY semestre ASC;",
+        )
+
+    def test_symbol_table_merge_and_partial_broken_file_resilience(self):
+        broken_code = """
+model Valido:
+  id_valido: auto main key
+    nombre: string required
+
+model RotoSinDosPuntos
+    campo: num
+
+Valido.new(nombre = "Prueba")
+"""
+        models = extract_context_models(broken_code)
+        self.assertEqual(len(models), 1)
+        self.assertEqual(models[0].name, "Valido")
+
+        ctx_table = build_context_symbol_table(broken_code)
+        self.assertIsNotNone(ctx_table.get_model("Valido"))
+        self.assertIsNotNone(ctx_table.get_model("Valido").get_field("id_valido"))
+        self.assertIsNotNone(ctx_table.get_model("Valido").get_field("nombre"))
+
+        session_table = SymbolTable()
+        session_table.merge_from(ctx_table, overwrite=True)
+        # Mutar ctx_table no debe afectar el clon en session_table
+        ctx_table.clear()
+        self.assertIsNotNone(session_table.get_model("Valido"))
 
 
 if __name__ == "__main__":

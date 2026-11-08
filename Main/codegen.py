@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 from visitor import Visitor
 from ast_nodes import (
     Node, Program, ModelDeclaration, Field, DataType, Constraint,
@@ -13,6 +13,7 @@ from db_executor import (
     load_db_config,
     save_db_config,
     format_ascii_table,
+    filter_sql_statements,
 )
 
 
@@ -91,29 +92,77 @@ class SQLCodeGenerator(Visitor):
         self.statements: SQLStatementList = SQLStatementList()
         self.active_models: List[ModelSymbol] = []
         self._declared_models_so_far: List[ModelSymbol] = []
+        self._allowed_model_declarations: Optional[Set[str]] = None
 
     def generate(
         self,
         ast_root: Optional[Program],
         symbol_table: Optional[SymbolTable] = None,
+        omit_ddl: bool = False,
+        omit_alter: bool = True,
+        allowed_model_declarations: Optional[Set[str]] = None,
     ) -> SQLStatementList:
-        """Recorre el AST validado y devuelve la lista de sentencias SQL de PostgreSQL."""
+        """
+        Recorre el AST validado y devuelve la lista de sentencias SQL de PostgreSQL.
+        Si la Tabla de Símbolos contiene modelos de contexto pre-cargados que no
+        están en `ast_root.statements` (o no están en `allowed_model_declarations`),
+        se registran en `_declared_models_so_far` para resolver llaves foráneas y
+        relaciones `.link()` sin emitir su DDL (`CREATE TABLE`).
+        """
         if symbol_table is not None:
             self.symbol_table = symbol_table
         self.statements = SQLStatementList()
         self.active_models = []
-        self._declared_models_so_far = []
+        self._allowed_model_declarations = (
+            {m.lower() for m in allowed_model_declarations}
+            if allowed_model_declarations is not None
+            else None
+        )
+
+        ast_model_names = {
+            stmt.name.lower()
+            for stmt in (getattr(ast_root, "statements", None) or [])
+            if isinstance(stmt, ModelDeclaration)
+            and (
+                self._allowed_model_declarations is None
+                or stmt.name.lower() in self._allowed_model_declarations
+            )
+        }
+        self._declared_models_so_far = [
+            model_sym
+            for key, model_sym in self.symbol_table.models.items()
+            if key not in ast_model_names
+        ]
+
         if ast_root is not None:
             self.visit(ast_root)
+
+        if omit_ddl:
+            filtered, _ = filter_sql_statements(
+                self.statements,
+                omit_ddl=omit_ddl,
+                omit_alter=omit_alter,
+            )
+            self.statements = SQLStatementList(filtered)
+
         return self.statements
 
     def generate_script(
         self,
         ast_root: Optional[Program],
         symbol_table: Optional[SymbolTable] = None,
+        omit_ddl: bool = False,
+        omit_alter: bool = True,
+        allowed_model_declarations: Optional[Set[str]] = None,
     ) -> str:
         """Devuelve todas las sentencias SQL generadas unidas en un script `.sql`."""
-        return self.generate(ast_root, symbol_table).script
+        return self.generate(
+            ast_root,
+            symbol_table,
+            omit_ddl=omit_ddl,
+            omit_alter=omit_alter,
+            allowed_model_declarations=allowed_model_declarations,
+        ).script
 
     # =====================================================================
     # 1. VISITA DEL PROGRAMA Y DECLARACIÓN DE MODELOS (DDL)
@@ -127,8 +176,16 @@ class SQLCodeGenerator(Visitor):
         return self.statements
 
     def visit_ModelDeclaration(self, node: ModelDeclaration) -> str:
-        table_name = self._normalize_identifier(node.name)
         model_sym = self.symbol_table.get_model(node.name)
+        if (
+            self._allowed_model_declarations is not None
+            and node.name.lower() not in self._allowed_model_declarations
+        ):
+            if model_sym is not None and model_sym not in self._declared_models_so_far:
+                self._declared_models_so_far.append(model_sym)
+            return ""
+
+        table_name = self._normalize_identifier(node.name)
 
         column_defs: List[str] = []
         for field_node in node.fields:

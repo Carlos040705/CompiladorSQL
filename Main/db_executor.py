@@ -5,8 +5,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-import psycopg2
-from psycopg2 import sql as pg_sql
+try:
+    import psycopg2
+    from psycopg2 import sql as pg_sql
+except ImportError:
+    psycopg2 = None  # type: ignore
+    pg_sql = None  # type: ignore
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -19,6 +23,8 @@ DEFAULT_DB_CONFIG: Dict[str, Any] = {
     "password": "postgres",
     "dbname": "compiladorsql_db",
     "reset_tables": True,
+    "omit_ddl": False,
+    "omit_alter": True,
 }
 
 
@@ -55,8 +61,9 @@ def load_db_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
                         config["port"] = int(raw["port"])
                     except (ValueError, TypeError):
                         pass
-                if "reset_tables" in raw and isinstance(raw["reset_tables"], bool):
-                    config["reset_tables"] = raw["reset_tables"]
+                for bool_key in ("reset_tables", "omit_ddl", "omit_alter"):
+                    if bool_key in raw and isinstance(raw[bool_key], bool):
+                        config[bool_key] = raw[bool_key]
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -73,8 +80,53 @@ def save_db_config(config: Dict[str, Any], config_path: Optional[Path] = None) -
             merged["port"] = int(merged["port"])
         except (ValueError, TypeError):
             merged["port"] = DEFAULT_DB_CONFIG["port"]
+    for bool_key in ("reset_tables", "omit_ddl", "omit_alter"):
+        if bool_key in merged:
+            merged[bool_key] = bool(merged[bool_key])
     path.write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+_LEADING_COMMENTS_RE = re.compile(r"^\s*(?:--[^\n]*\n\s*|/\*.*?\*/\s*)*", re.DOTALL)
+
+
+def extract_leading_sql_keyword(stmt: str) -> str:
+    """Obtiene la primera palabra clave SQL de una sentencia ignorando comentarios iniciales."""
+    cleaned = _LEADING_COMMENTS_RE.sub("", stmt or "").strip()
+    if not cleaned:
+        return ""
+    return cleaned.split()[0].upper().rstrip(";")
+
+
+def filter_sql_statements(
+    statements: Sequence[str],
+    omit_ddl: bool = False,
+    omit_alter: bool = True,
+) -> Tuple[List[str], List[str]]:
+    """
+    Filtra sentencias SQL según las banderas 'Omitir DDL' y 'Omitir ALTER':
+    - Si omit_ddl es False: se permiten todas las sentencias.
+    - Si omit_ddl es True y omit_alter es True: se omiten CREATE, DROP, ALTER, TRUNCATE.
+    - Si omit_ddl es True y omit_alter es False: se omiten CREATE, DROP, TRUNCATE,
+      pero se permite ejecutar ALTER junto con DML y consultas.
+    Devuelve (sentencias_ejecutables, sentencias_omitidas).
+    """
+    if not omit_ddl:
+        return list(statements), []
+
+    blocked_keywords = {"CREATE", "DROP", "TRUNCATE"}
+    if omit_alter:
+        blocked_keywords.add("ALTER")
+
+    executable: List[str] = []
+    omitted: List[str] = []
+    for stmt in statements:
+        kw = extract_leading_sql_keyword(stmt)
+        if kw in blocked_keywords:
+            omitted.append(stmt)
+        else:
+            executable.append(stmt)
+    return executable, omitted
 
 
 def format_ascii_table(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
@@ -134,6 +186,7 @@ class ExecutionReport:
     results: List[StatementResult] = field(default_factory=list)
     connection_error: Optional[str] = None
     reset_tables_executed: List[str] = field(default_factory=list)
+    omitted_statements: List[str] = field(default_factory=list)
 
     @property
     def success_count(self) -> int:
@@ -160,6 +213,11 @@ class ExecutionReport:
                 f"[Esquema] Tablas reiniciadas limpiamente: {', '.join(self.reset_tables_executed)}"
             )
 
+        if self.omitted_statements:
+            lines.append(
+                f"[Filtro DDL] {len(self.omitted_statements)} sentencia(s) DDL omitida(s) por configuración."
+            )
+
         for res in self.results:
             lines.append(f"\n[{res.index}] SQL: {res.sql}")
             if res.success:
@@ -173,7 +231,8 @@ class ExecutionReport:
         lines.append("\n" + "-" * 75)
         lines.append(
             f"Resumen de ejecución: {self.success_count} exitosas, "
-            f"{self.error_count} con error (Total: {len(self.results)})."
+            f"{self.error_count} con error (Total ejecutadas: {len(self.results)}"
+            f"{f', Omitidas: {len(self.omitted_statements)}' if self.omitted_statements else ''})."
         )
         lines.append("=" * 75)
         return "\n".join(lines)
@@ -195,6 +254,8 @@ class PostgresExecutor:
         password: Optional[str] = None,
         dbname: Optional[str] = None,
         config_path: Optional[Path] = None,
+        omit_ddl: Optional[bool] = None,
+        omit_alter: Optional[bool] = None,
     ):
         loaded = load_db_config(config_path)
         self.host: str = host if host is not None else loaded["host"]
@@ -203,6 +264,12 @@ class PostgresExecutor:
         self.password: str = password if password is not None else loaded["password"]
         self.dbname: str = dbname if dbname is not None else loaded["dbname"]
         self.reset_tables_default: bool = bool(loaded.get("reset_tables", True))
+        self.omit_ddl_default: bool = (
+            bool(omit_ddl) if omit_ddl is not None else bool(loaded.get("omit_ddl", False))
+        )
+        self.omit_alter_default: bool = (
+            bool(omit_alter) if omit_alter is not None else bool(loaded.get("omit_alter", True))
+        )
 
     def get_connection_params(self, dbname_override: Optional[str] = None) -> Dict[str, Any]:
         return {
@@ -270,6 +337,14 @@ class PostgresExecutor:
         return tables
 
     @staticmethod
+    def filter_statements(
+        statements: Sequence[str],
+        omit_ddl: bool = False,
+        omit_alter: bool = True,
+    ) -> Tuple[List[str], List[str]]:
+        return filter_sql_statements(statements, omit_ddl=omit_ddl, omit_alter=omit_alter)
+
+    @staticmethod
     def _detect_command_type(stmt: str) -> str:
         tokens = stmt.strip().split()
         if not tokens:
@@ -277,6 +352,8 @@ class PostgresExecutor:
         first = tokens[0].upper()
         if first == "CREATE" and len(tokens) >= 2:
             return f"CREATE {tokens[1].upper()}"
+        if first == "ALTER" and len(tokens) >= 2:
+            return f"ALTER {tokens[1].upper()}"
         if first == "DELETE":
             return "DELETE"
         if first == "INSERT":
@@ -292,21 +369,38 @@ class PostgresExecutor:
         statements: Union[str, Sequence[str]],
         reset_tables: Optional[bool] = None,
         ensure_db: bool = True,
+        omit_ddl: Optional[bool] = None,
+        omit_alter: Optional[bool] = None,
     ) -> ExecutionReport:
         """
         Ejecuta una lista de sentencias SQL en PostgreSQL, capturando filas devueltas,
         conteo de filas afectadas y errores por sentencia mediante SAVEPOINT.
+        Aplica el filtrado de sentencias según 'omit_ddl' y 'omit_alter'.
         """
         if isinstance(statements, str):
-            stmt_list = [s.strip() for s in statements.split(";") if s.strip()]
-            stmt_list = [f"{s};" for s in stmt_list]
+            raw_list = [s.strip() for s in statements.split(";") if s.strip()]
+            raw_list = [f"{s};" for s in raw_list]
         else:
-            stmt_list = [s.strip() for s in statements if s and s.strip()]
+            raw_list = [s.strip() for s in statements if s and s.strip()]
 
         if reset_tables is None:
             reset_tables = self.reset_tables_default
+        if omit_ddl is None:
+            omit_ddl = self.omit_ddl_default
+        if omit_alter is None:
+            omit_alter = self.omit_alter_default
 
-        report = ExecutionReport(connected=False, database=self.dbname)
+        stmt_list, omitted_list = self.filter_statements(
+            raw_list,
+            omit_ddl=bool(omit_ddl),
+            omit_alter=bool(omit_alter),
+        )
+
+        report = ExecutionReport(
+            connected=False,
+            database=self.dbname,
+            omitted_statements=omitted_list,
+        )
 
         try:
             if ensure_db:
@@ -322,7 +416,8 @@ class PostgresExecutor:
         report.connected = True
         try:
             with conn.cursor() as cur:
-                if reset_tables:
+                # Si omit_ddl está activo, tampoco destruimos tablas existentes en el reinicio automático
+                if reset_tables and not omit_ddl:
                     tables_to_reset = self._extract_created_tables(stmt_list)
                     if tables_to_reset:
                         for tbl in reversed(tables_to_reset):
@@ -363,6 +458,8 @@ class PostgresExecutor:
                             affected = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
                             if cmd_type.startswith("CREATE"):
                                 status_msg = "Tabla verificada/creada"
+                            elif cmd_type.startswith("ALTER"):
+                                status_msg = "Estructura alterada"
                             else:
                                 status_msg = f"{affected} fila(s) afectada(s)"
                             report.results.append(

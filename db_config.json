@@ -1,0 +1,10 @@
+{
+  "host": "localhost",
+  "port": 5432,
+  "user": "postgres",
+  "password": "bernapro190",
+  "dbname": "usuarios",
+  "reset_tables": false,
+  "omit_ddl": false,
+  "omit_alter": true
+}

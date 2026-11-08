@@ -1,12 +1,259 @@
+import contextlib
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional, Set
+import io
+import re
+import textwrap
+from typing import Dict, List, Optional, Sequence, Set, Union
 from visitor import Visitor
 from ast_nodes import (
     Program, ModelDeclaration, Field,
     DbOperation, Parameter, Literal, Identifier,
     BinaryOperation, UnaryOperation
 )
+
+
+# =====================================================================
+# 0. EXTRACCIÓN DE CONTEXTO DE MODELOS Y NORMALIZACIÓN DE FRAGMENTOS
+# =====================================================================
+
+_MODEL_HEADER_RE = re.compile(r"^model\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:", re.IGNORECASE)
+_FIELD_HEADER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*\s*:")
+_FIELD_FULL_RE = re.compile(
+    r"^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([a-zA-Z_][a-zA-Z0-9_]*)"
+    r"(?:\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\))?(.*)$"
+)
+_DML_OPERATION_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(")
+_VALID_FIELD_TYPES = {"STRING", "TEXT", "NUM", "AUTO", "DECIMAL", "BOOL", "DATE"}
+
+
+def _extract_model_blocks_list(full_code: str) -> List[str]:
+    """
+    Extrae cada bloque `model <nombre>:` del código completo, normalizando
+    la sangría de sus declaraciones de atributos a exactamente 4 espacios ('    ')
+    sin importar si el archivo original mezcló 1, 2, 3 o 4 espacios.
+    Devuelve una lista donde cada elemento es el código fuente de un bloque `model`.
+    """
+    if not full_code or not full_code.strip():
+        return []
+
+    normalized = full_code.replace("\r\n", "\n").replace("\t", "    ")
+    lines = normalized.splitlines()
+
+    blocks: List[List[str]] = []
+    current_block: Optional[List[str]] = None
+    in_multiline_comment = False
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+
+        # Manejo de comentarios multilínea /* ... */
+        if in_multiline_comment:
+            if "*/" in stripped:
+                in_multiline_comment = False
+            continue
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_multiline_comment = True
+            continue
+
+        # Eliminar comentario de una línea '//'
+        code_part = raw_line.split("//", 1)[0].rstrip()
+        code_stripped = code_part.strip()
+
+        if not code_stripped:
+            continue
+
+        # ¿Es un encabezado `model <nombre>:` (con cualquier sangría base)?
+        if _MODEL_HEADER_RE.match(code_stripped):
+            if current_block is not None and len(current_block) > 1:
+                blocks.append(current_block)
+            current_block = [code_stripped]
+            continue
+
+        if current_block is not None:
+            # ¿Es una declaración de atributo `<identificador> : <tipo>...` y no una operación DML?
+            if (
+                _FIELD_HEADER_RE.match(code_stripped)
+                and not _MODEL_HEADER_RE.match(code_stripped)
+                and not _DML_OPERATION_RE.match(code_stripped)
+            ):
+                current_block.append("    " + code_stripped)
+            else:
+                # Fin del bloque model al encontrar una operación DML u otra sentencia
+                if len(current_block) > 1:
+                    blocks.append(current_block)
+                current_block = None
+
+    if current_block is not None and len(current_block) > 1:
+        blocks.append(current_block)
+
+    return ["\n".join(block) + "\n" for block in blocks]
+
+
+def extract_model_blocks_source(full_code: str) -> str:
+    """
+    Extrae únicamente los bloques `model <nombre>:` (con sus campos normalizados
+    a 4 espacios de sangría) a partir del código completo del editor, ignorando
+    operaciones DML sueltas.
+    """
+    blocks = _extract_model_blocks_list(full_code)
+    if not blocks:
+        return ""
+    return "\n".join(b.rstrip("\n") for b in blocks) + "\n"
+
+
+def normalize_dsl_fragment(fragment: str) -> str:
+    """
+    Normalización inteligente para fragmentos copiados al portapapeles:
+    - Convierte tabulaciones en 4 espacios y normaliza saltos de línea.
+    - Si el fragmento contiene únicamente operaciones DML (sin encabezados `model <nombre>:`),
+      elimina los espacios iniciales de cada línea para evitar tokens INDENT o errores de sangría.
+    - Si el fragmento contiene bloques `model` (solos o junto con operaciones DML), aplica
+      `textwrap.dedent` y normaliza la sangría de los atributos de `model` a exactamente 4 espacios.
+    """
+    if not fragment or not fragment.strip():
+        return ""
+
+    cleaned = textwrap.dedent(fragment.replace("\r\n", "\n").replace("\t", "    "))
+    lines = cleaned.splitlines()
+
+    # Determinar si el fragmento contiene algún encabezado `model <nombre>:`
+    has_model_header = False
+    in_multiline = False
+    for raw_line in lines:
+        s = raw_line.strip()
+        if in_multiline:
+            if "*/" in s:
+                in_multiline = False
+            continue
+        if s.startswith("/*"):
+            if "*/" not in s:
+                in_multiline = True
+            continue
+        code_stripped = raw_line.split("//", 1)[0].strip()
+        if _MODEL_HEADER_RE.match(code_stripped):
+            has_model_header = True
+            break
+
+    normalized_lines: List[str] = []
+    if not has_model_header:
+        # Solo operaciones DML (o comentarios): quitar sangría izquierda en cada línea
+        for raw_line in lines:
+            normalized_lines.append(raw_line.lstrip(" "))
+        return "\n".join(normalized_lines) + "\n"
+
+    # El fragmento incluye al menos un bloque `model <nombre>:`
+    in_model = False
+    in_multiline = False
+    for raw_line in lines:
+        s = raw_line.strip()
+        if in_multiline:
+            normalized_lines.append(raw_line)
+            if "*/" in s:
+                in_multiline = False
+            continue
+        if s.startswith("/*"):
+            normalized_lines.append(raw_line)
+            if "*/" not in s:
+                in_multiline = True
+            continue
+
+        code_stripped = raw_line.split("//", 1)[0].strip()
+        if not code_stripped:
+            normalized_lines.append(raw_line.strip())
+            continue
+
+        if _MODEL_HEADER_RE.match(code_stripped):
+            in_model = True
+            normalized_lines.append(raw_line.lstrip(" "))
+        elif in_model:
+            if (
+                _FIELD_HEADER_RE.match(code_stripped)
+                and not _MODEL_HEADER_RE.match(code_stripped)
+                and not _DML_OPERATION_RE.match(code_stripped)
+            ):
+                normalized_lines.append("    " + raw_line.lstrip(" "))
+            else:
+                in_model = False
+                normalized_lines.append(raw_line.lstrip(" "))
+        else:
+            normalized_lines.append(raw_line.lstrip(" "))
+
+    return "\n".join(normalized_lines) + "\n"
+
+
+def _parse_model_source_quietly(source_text: str) -> List[ModelDeclaration]:
+    """
+    Ejecuta el lexer y parser sobre `source_text` preservando intacto el estado
+    global de errores léxicos/sintácticos y el número de línea del lexer.
+    """
+    if not source_text or not source_text.strip():
+        return []
+
+    from lexer import lexer, errores_lexicos
+    from parser import parser, errores_sintacticos
+
+    saved_lex_errors = list(errores_lexicos)
+    saved_syn_errors = list(errores_sintacticos)
+    saved_lineno = getattr(lexer, "lineno", 1)
+
+    parsed_models: List[ModelDeclaration] = []
+    try:
+        errores_lexicos.clear()
+        errores_sintacticos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(source_text if source_text.endswith("\n") else source_text + "\n")
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+            if tokens and not errores_lexicos:
+                token_iter = iter(tokens)
+                ast_ctx = parser.parse(tokenfunc=lambda: next(token_iter, None))
+                if ast_ctx and getattr(ast_ctx, "statements", None):
+                    parsed_models = [
+                        stmt for stmt in ast_ctx.statements
+                        if isinstance(stmt, ModelDeclaration)
+                    ]
+    except Exception:
+        parsed_models = []
+    finally:
+        errores_lexicos.clear()
+        errores_lexicos.extend(saved_lex_errors)
+        errores_sintacticos.clear()
+        errores_sintacticos.extend(saved_syn_errors)
+        lexer.lineno = saved_lineno
+
+    return parsed_models
+
+
+def extract_context_models(full_code: str) -> List[ModelDeclaration]:
+    """
+    Parsea los bloques `model <nombre>:` del código completo del editor y devuelve
+    la lista de nodos `ModelDeclaration`. Si un archivo tiene múltiples bloques
+    `model` y alguno contiene un error sintáctico, parsea cada bloque individualmente
+    como fallback para rescatar todos los modelos válidos.
+    """
+    blocks = _extract_model_blocks_list(full_code)
+    if not blocks:
+        return []
+
+    combined_source = "\n".join(b.rstrip("\n") for b in blocks) + "\n"
+    models = _parse_model_source_quietly(combined_source)
+
+    if len(models) < len(blocks):
+        seen_names = {m.name.lower() for m in models}
+        for single_block in blocks:
+            single_models = _parse_model_source_quietly(single_block)
+            for m in single_models:
+                if m.name.lower() not in seen_names:
+                    models.append(m)
+                    seen_names.add(m.name.lower())
+
+    return models
 
 
 # =====================================================================
@@ -28,6 +275,16 @@ class FieldSymbol:
         """Un campo es obligatorio en inserciones si tiene REQUIRED y no es AUTO ni tiene DEFAULT."""
         return ('REQUIRED' in self.constraints) and (self.data_type != 'AUTO') and ('DEFAULT' not in self.constraints)
 
+    def clone(self) -> "FieldSymbol":
+        return FieldSymbol(
+            name=self.name,
+            data_type=self.data_type,
+            type_args=list(self.type_args),
+            constraints=set(self.constraints),
+            default_value=self.default_value,
+            lineno=self.lineno,
+        )
+
 
 @dataclass
 class ModelSymbol:
@@ -45,6 +302,12 @@ class ModelSymbol:
 
     def get_field(self, name: str) -> Optional[FieldSymbol]:
         return self.fields.get(name.lower())
+
+    def clone(self) -> "ModelSymbol":
+        cloned = ModelSymbol(name=self.name, lineno=self.lineno)
+        for key, f_sym in self.fields.items():
+            cloned.fields[key] = f_sym.clone()
+        return cloned
 
 
 class SymbolTable:
@@ -64,6 +327,29 @@ class SymbolTable:
 
     def get_model(self, name: str) -> Optional[ModelSymbol]:
         return self.models.get(name.lower())
+
+    def merge_from(
+        self,
+        other_table: Optional[Union["SymbolTable", Dict[str, ModelSymbol]]],
+        overwrite: bool = True,
+    ) -> None:
+        """
+        Copia o actualiza los `ModelSymbol` (y sus `FieldSymbol` clonados) desde
+        otra tabla de símbolos sin perder los modelos ya registrados.
+        """
+        if other_table is None:
+            return
+        source_models = (
+            other_table.models
+            if isinstance(other_table, SymbolTable)
+            else other_table
+        )
+        for key, model_sym in source_models.items():
+            if not isinstance(model_sym, ModelSymbol):
+                continue
+            norm_key = key.lower()
+            if overwrite or norm_key not in self.models:
+                self.models[norm_key] = model_sym.clone()
 
     def resolve_field_in_scope(self, field_name: str, active_models: List[ModelSymbol]) -> List[FieldSymbol]:
         """Busca un atributo en todos los modelos activos de la consulta (incluyendo modelos unidos por .link())."""
@@ -89,6 +375,129 @@ class SymbolTable:
                 c_str = ", ".join(sorted(f.constraints)) if f.constraints else "Ninguna"
                 print(f"  {f.name:<18} | {t_str:<16} | {c_str:<30}")
         print("=" * 75)
+
+
+def _parse_models_fallback_regex(full_code: str) -> SymbolTable:
+    """
+    Analizador de respaldo línea por línea sobre los bloques `model` en caso de que
+    el parser de PLY falle por algún token inesperado en otro lugar del archivo.
+    """
+    table = SymbolTable()
+    if not full_code or not full_code.strip():
+        return table
+
+    normalized = full_code.replace("\r\n", "\n").replace("\t", "    ")
+    lines = normalized.splitlines()
+    current_model: Optional[ModelSymbol] = None
+    in_multiline_comment = False
+
+    for idx, raw_line in enumerate(lines, start=1):
+        stripped = raw_line.strip()
+        if in_multiline_comment:
+            if "*/" in stripped:
+                in_multiline_comment = False
+            continue
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_multiline_comment = True
+            continue
+
+        code_stripped = raw_line.split("//", 1)[0].strip()
+        if not code_stripped:
+            continue
+
+        header_match = _MODEL_HEADER_RE.match(code_stripped)
+        if header_match:
+            if current_model is not None and current_model.fields:
+                table.models[current_model.name.lower()] = current_model
+            model_name = header_match.group(1)
+            current_model = ModelSymbol(name=model_name, lineno=idx)
+            continue
+
+        if current_model is not None:
+            if _DML_OPERATION_RE.match(code_stripped):
+                if current_model.fields:
+                    table.models[current_model.name.lower()] = current_model
+                current_model = None
+                continue
+
+            field_match = _FIELD_FULL_RE.match(code_stripped)
+            if field_match:
+                f_name = field_match.group(1)
+                f_type = field_match.group(2).upper()
+                if f_type in _VALID_FIELD_TYPES:
+                    type_args: List[int] = []
+                    if field_match.group(3) is not None:
+                        type_args.append(int(field_match.group(3)))
+                    if field_match.group(4) is not None:
+                        type_args.append(int(field_match.group(4)))
+
+                    rest_text = (field_match.group(5) or "").strip()
+                    rest_lower = rest_text.lower()
+                    constraints: Set[str] = set()
+                    if "main key" in rest_lower:
+                        constraints.add("MAIN KEY")
+                    if "external key" in rest_lower:
+                        constraints.add("EXTERNAL KEY")
+                    if re.search(r"\brequired\b", rest_lower):
+                        constraints.add("REQUIRED")
+                    if re.search(r"\bunique\b", rest_lower):
+                        constraints.add("UNIQUE")
+                    if re.search(r"\bdefault\b", rest_lower):
+                        constraints.add("DEFAULT")
+
+                    current_model.add_field(
+                        FieldSymbol(
+                            name=f_name,
+                            data_type=f_type,
+                            type_args=type_args,
+                            constraints=constraints,
+                            default_value=None,
+                            lineno=idx,
+                        )
+                    )
+                    continue
+
+            # Línea que no pertenece al bloque model
+            if current_model.fields:
+                table.models[current_model.name.lower()] = current_model
+            current_model = None
+
+    if current_model is not None and current_model.fields:
+        table.models[current_model.name.lower()] = current_model
+
+    return table
+
+
+def build_context_symbol_table(
+    full_code: str,
+    fallback_table: Optional[SymbolTable] = None,
+) -> SymbolTable:
+    """
+    Construye una `SymbolTable` de contexto combinando:
+    1. `fallback_table` (si se proporciona, como `session_symbol_table`).
+    2. Los modelos extraídos por AST mediante `extract_context_models(full_code)`.
+    3. El analizador de respaldo línea por línea (`_parse_models_fallback_regex`)
+       por si algún modelo no pudo ser parseado por PLY.
+    """
+    result_table = SymbolTable()
+    if fallback_table is not None:
+        result_table.merge_from(fallback_table, overwrite=True)
+
+    if full_code and full_code.strip():
+        ast_models = extract_context_models(full_code)
+        if ast_models:
+            temp_analyzer = SemanticAnalyzer()
+            with contextlib.redirect_stdout(io.StringIO()):
+                for m_node in ast_models:
+                    temp_analyzer.visit_ModelDeclaration(m_node)
+            result_table.merge_from(temp_analyzer.symbol_table, overwrite=True)
+
+        regex_table = _parse_models_fallback_regex(full_code)
+        # Inyectar cualquier modelo que el parser de PLY no haya podido construir
+        result_table.merge_from(regex_table, overwrite=False)
+
+    return result_table
 
 
 # =====================================================================
@@ -158,6 +567,7 @@ class SemanticAnalyzer(Visitor):
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self.active_models: List[ModelSymbol] = []
+        self._persistent_symbols: Optional[SymbolTable] = None
 
     def report_error(self, message: str, lineno: int = 0):
         loc = f" (Línea {lineno})" if lineno > 0 else ""
@@ -165,10 +575,105 @@ class SemanticAnalyzer(Visitor):
         self.errors.append(full_msg)
         print(full_msg)
 
-    def analyze(self, ast_root: Program):
+    def preload_context_models(
+        self,
+        context_models: Sequence[ModelDeclaration],
+        skip_model_names: Optional[Set[str]] = None,
+    ):
+        """
+        Registra declaraciones `model` de contexto en la Tabla de Símbolos
+        sin añadirlas al AST del fragmento que se va a compilar/generar.
+        """
+        skip_set = {name.lower() for name in (skip_model_names or set())}
+        with contextlib.redirect_stdout(io.StringIO()):
+            for model_node in context_models:
+                if not isinstance(model_node, ModelDeclaration):
+                    continue
+                if model_node.name.lower() in skip_set:
+                    continue
+                if self.symbol_table.get_model(model_node.name) is not None:
+                    continue
+                self.visit_ModelDeclaration(model_node)
+        # Limpiar cualquier advertencia/error del pre-cargado para evaluar solo el fragmento
+        self.errors.clear()
+
+    def preload_symbol_table(
+        self,
+        source_symbols: Optional[Union[SymbolTable, Dict[str, ModelSymbol]]],
+        skip_model_names: Optional[Set[str]] = None,
+    ):
+        """
+        Inyecta en `self.symbol_table` cualquier `ModelSymbol` presente en `source_symbols`
+        que aún no esté registrado ni sea redeclarado explícitamente en el AST actual.
+        """
+        if source_symbols is None:
+            return
+        skip_set = {name.lower() for name in (skip_model_names or set())}
+        models_dict = (
+            source_symbols.models
+            if isinstance(source_symbols, SymbolTable)
+            else source_symbols
+        )
+        for key, model_sym in models_dict.items():
+            if not isinstance(model_sym, ModelSymbol):
+                continue
+            norm_key = key.lower()
+            if norm_key in skip_set:
+                continue
+            if self.symbol_table.get_model(norm_key) is None:
+                self.symbol_table.models[norm_key] = model_sym.clone()
+
+    def _resolve_or_inject_model(self, name: str) -> Optional[ModelSymbol]:
+        model = self.symbol_table.get_model(name)
+        if model is not None:
+            return model
+        if self._persistent_symbols is not None:
+            fallback = self._persistent_symbols.get_model(name)
+            if fallback is not None:
+                cloned = fallback.clone()
+                self.symbol_table.models[name.lower()] = cloned
+                return cloned
+        return None
+
+    def analyze(
+        self,
+        ast_root: Program,
+        context_models: Optional[Sequence[ModelDeclaration]] = None,
+        context_code: Optional[str] = None,
+        persistent_symbols: Optional[Union[SymbolTable, Dict[str, ModelSymbol]]] = None,
+    ):
         self.symbol_table.clear()
         self.errors.clear()
         self.warnings.clear()
+
+        if isinstance(persistent_symbols, SymbolTable):
+            self._persistent_symbols = persistent_symbols
+        elif isinstance(persistent_symbols, dict):
+            temp_sym = SymbolTable()
+            temp_sym.merge_from(persistent_symbols, overwrite=True)
+            self._persistent_symbols = temp_sym
+        else:
+            self._persistent_symbols = None
+
+        declared_in_ast = {
+            stmt.name.lower()
+            for stmt in (getattr(ast_root, "statements", None) or [])
+            if isinstance(stmt, ModelDeclaration)
+        }
+
+        if context_models is None and context_code:
+            context_models = extract_context_models(context_code)
+
+        if context_models:
+            self.preload_context_models(context_models, skip_model_names=declared_in_ast)
+
+        if context_code:
+            ctx_table = build_context_symbol_table(context_code)
+            self.preload_symbol_table(ctx_table, skip_model_names=declared_in_ast)
+
+        if self._persistent_symbols is not None:
+            self.preload_symbol_table(self._persistent_symbols, skip_model_names=declared_in_ast)
+
         if ast_root is not None:
             self.visit(ast_root)
         return self.errors, self.symbol_table
@@ -272,7 +777,7 @@ class SemanticAnalyzer(Visitor):
     # --- 3.2 Validación de Operaciones y Cadenas de Métodos (DML) ---
     def visit_DbOperation(self, node: DbOperation):
         lineno = getattr(node, 'lineno', 0)
-        base_model = self.symbol_table.get_model(node.model_name)
+        base_model = self._resolve_or_inject_model(node.model_name)
         if base_model is None:
             self.report_error(
                 f"El modelo '{node.model_name}' no ha sido declarado.",
@@ -328,7 +833,7 @@ class SemanticAnalyzer(Visitor):
         arg = call.arguments[0]
         arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
         target_name = arg.name
-        target_model = self.symbol_table.get_model(target_name)
+        target_model = self._resolve_or_inject_model(target_name)
         if target_model is None:
             self.report_error(
                 f"El modelo '{target_name}' referenciado en '.link({target_name})' no existe.",

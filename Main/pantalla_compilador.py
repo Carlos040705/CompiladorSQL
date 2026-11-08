@@ -1,15 +1,24 @@
 import asyncio
+import contextlib
+import ctypes
+import io
+import os
 import queue
 import re
 import shutil
+import textwrap
 import threading
+import time
 from pathlib import Path
 
 import flet as ft
 import pyte
-from winpty import PtyProcess, WinptyError
-import contextlib
-import io
+try:
+    from winpty import PtyProcess, WinptyError
+except ImportError:
+    PtyProcess = None  # type: ignore
+    WinptyError = OSError  # type: ignore
+
 from ast_nodes import (
     BinaryOperation,
     DbOperation,
@@ -24,7 +33,13 @@ from codegen import SQLCodeGenerator
 from db_executor import PostgresExecutor, load_db_config, save_db_config
 from lexer import errores_lexicos, lexer
 from parser import errores_sintacticos, parser
-from semantic import SemanticAnalyzer
+from semantic import (
+    SemanticAnalyzer,
+    SymbolTable,
+    build_context_symbol_table,
+    extract_context_models,
+    normalize_dsl_fragment,
+)
 
 
 BACKGROUND = "#101722"
@@ -38,6 +53,162 @@ ACCENT = "#24b8ad"
 BLUE = "#4da3ff"
 
 
+# =====================================================================
+# UTILIDADES DE PORTAPAPELES DEL SISTEMA (WINDOWS NATIVO + TKINTER)
+# =====================================================================
+
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x0002
+
+
+def leer_portapapeles_sistema() -> str:
+    """
+    Lee el texto actual del portapapeles del sistema de forma síncrona e instantánea.
+    Intenta primero con tkinter (librería estándar) y usa la API nativa Win32 (ctypes)
+    como respaldo directo en Windows.
+    """
+    # 1. Intento mediante tkinter
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            contenido = root.clipboard_get()
+        except Exception:
+            contenido = ""
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+        if isinstance(contenido, str) and contenido:
+            return contenido
+    except Exception:
+        pass
+
+    # 2. Respaldo directo con API Win32 (ctypes)
+    if os.name == "nt":
+        try:
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+            user32.OpenClipboard.restype = ctypes.c_int
+            user32.GetClipboardData.argtypes = [ctypes.c_uint]
+            user32.GetClipboardData.restype = ctypes.c_void_p
+            user32.CloseClipboard.argtypes = []
+            user32.CloseClipboard.restype = ctypes.c_int
+            kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalUnlock.restype = ctypes.c_int
+
+            if user32.OpenClipboard(None):
+                try:
+                    handle = user32.GetClipboardData(CF_UNICODETEXT)
+                    if handle:
+                        pcontents = kernel32.GlobalLock(handle)
+                        if pcontents:
+                            try:
+                                texto = ctypes.wstring_at(pcontents)
+                                return texto or ""
+                            finally:
+                                kernel32.GlobalUnlock(handle)
+                finally:
+                    user32.CloseClipboard()
+        except Exception:
+            pass
+
+    return ""
+
+
+def copiar_portapapeles_sistema(texto: str) -> bool:
+    """
+    Copia texto al portapapeles del sistema de forma síncrona usando tkinter
+    y la API nativa Win32 (ctypes) como respaldo.
+    """
+    texto_str = str(texto or "")
+
+    # 1. Intento con API Win32 (instantáneo y persistente tras cerrar ventana)
+    if os.name == "nt":
+        try:
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+            user32.OpenClipboard.restype = ctypes.c_int
+            user32.EmptyClipboard.argtypes = []
+            user32.EmptyClipboard.restype = ctypes.c_int
+            user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+            user32.SetClipboardData.restype = ctypes.c_void_p
+            user32.CloseClipboard.argtypes = []
+            user32.CloseClipboard.restype = ctypes.c_int
+            kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+            kernel32.GlobalAlloc.restype = ctypes.c_void_p
+            kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+            kernel32.GlobalUnlock.restype = ctypes.c_int
+
+            raw_bytes = (texto_str + "\x00").encode("utf-16-le")
+            h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(raw_bytes))
+            if h_mem:
+                ptr = kernel32.GlobalLock(h_mem)
+                if ptr:
+                    ctypes.memmove(ptr, raw_bytes, len(raw_bytes))
+                    kernel32.GlobalUnlock(h_mem)
+                    if user32.OpenClipboard(None):
+                        try:
+                            user32.EmptyClipboard()
+                            user32.SetClipboardData(CF_UNICODETEXT, h_mem)
+                            return True
+                        finally:
+                            user32.CloseClipboard()
+        except Exception:
+            pass
+
+    # 2. Respaldo mediante tkinter
+    try:
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.clipboard_clear()
+            root.clipboard_append(texto_str)
+            root.update()
+            return True
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    except Exception:
+        return False
+
+
+def crear_borde_campo(
+    color_default: str = BORDER,
+    color_foco: str = ACCENT,
+    radio: int = 4,
+):
+    """Configuración moderna de bordes para TextField en Flet 1.0+ sin DeprecationWarning."""
+    return {
+        ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+            border_radius=radio,
+            side=ft.BorderSide(1, color_default),
+        ),
+        ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+            border_radius=radio,
+            side=ft.BorderSide(1.5, color_foco),
+        ),
+    }
+
+
+def normalizar_tabulaciones(texto: str) -> str:
+    """Reemplaza retornos de carro Windows y convierte tabuladores '\\t' en 4 espacios."""
+    return (texto or "").replace("\r\n", "\n").replace("\t", "    ")
+
+
 def iniciar_interfaz(page: ft.Page):
     page.title = "CompiladorSQL — Editor y compilador"
     page.theme_mode = ft.ThemeMode.DARK
@@ -45,15 +216,23 @@ def iniciar_interfaz(page: ft.Page):
     page.padding = 0
     page.spacing = 0
 
+    # Bandera de estado de ciclo de vida para evitar RuntimeError y WinError 10054 al cerrar
+    app_cerrando = False
+
     root_directory = Path(__file__).resolve().parent.parent
     active_path = root_directory / "Prueba.txt"
     if not active_path.is_file():
         active_path = None
     saved_content = ""
+    previous_editor_text = ""
+    editor_has_focus = False
     documents: list[dict] = []
     active_document: dict | None = None
     next_document_id = 1
+    session_symbol_table = SymbolTable()
     expanded_directories: set[Path] = set()
+    renaming_path: Path | None = None
+    active_context_menu_overlay: ft.Control | None = None
     shell_process: PtyProcess | None = None
     terminal_columns = 80
     terminal_rows = 12
@@ -67,7 +246,9 @@ def iniciar_interfaz(page: ft.Page):
     terminal_stream = pyte.Stream(terminal_screen)
     pressed_modifiers: set[str] = set()
     terminal_height = 250
+    pending_drag_height = 250.0
     terminal_is_resizing = False
+    last_terminal_drag_update = 0.0
     workspace_height = 0
     terminal_has_focus = True
     terminal_refocus_pending = False
@@ -84,6 +265,56 @@ def iniciar_interfaz(page: ft.Page):
     editor_horizontal_viewport_width = 800.0
     editor_text_content_width = 800.0
     editor_line_height = 18
+
+    def actualizar_pagina_seguro(*controles):
+        if app_cerrando:
+            return
+        try:
+            page.update(*controles)
+        except RuntimeError:
+            pass
+        except Exception:
+            pass
+
+    def actualizar_control_seguro(control):
+        if app_cerrando or control is None:
+            return
+        try:
+            control.update()
+        except RuntimeError:
+            pass
+        except Exception:
+            pass
+
+    def devolver_foco_al_editor_si_activo(_=None):
+        if editor_has_focus and not search_bar.visible and not app_cerrando:
+            try:
+                page.run_task(editor.focus)
+            except RuntimeError:
+                pass
+
+    def configurar_sin_foco(control):
+        """
+        Configura can_request_focus=False en el control y evita que la tecla Tab
+        robe el foco cuando el usuario está escribiendo en el editor.
+        """
+        if control is None:
+            return control
+        try:
+            control.can_request_focus = False
+        except Exception:
+            pass
+        if hasattr(control, "autofocus"):
+            try:
+                control.autofocus = False
+            except Exception:
+                pass
+        if hasattr(control, "on_focus") and getattr(control, "on_focus", None) is None:
+            try:
+                control.on_focus = devolver_foco_al_editor_si_activo
+            except Exception:
+                pass
+        return control
 
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
@@ -145,7 +376,7 @@ def iniciar_interfaz(page: ft.Page):
         max_lines=2,
         width=editor_text_content_width,
         expand=False,
-        border=ft.InputBorder.NONE,
+        border=ft.NoInputBorder(),
         bgcolor="transparent",
         color=TEXT,
         cursor_color=ACCENT,
@@ -198,12 +429,14 @@ def iniciar_interfaz(page: ft.Page):
 
     def redimensionar_vista_horizontal_editor(event):
         nonlocal editor_horizontal_viewport_width
+        if app_cerrando:
+            return
         if abs(event.width - editor_horizontal_viewport_width) < 1:
             return
         editor_horizontal_viewport_width = event.width
         actualizar_ancho_editor(editor.value or "")
-        editor_text_view.update()
-        editor_horizontal_scroll.update()
+        actualizar_control_seguro(editor_text_view)
+        actualizar_control_seguro(editor_horizontal_scroll)
 
     editor_preview = ft.Text(
         value="",
@@ -290,13 +523,15 @@ def iniciar_interfaz(page: ft.Page):
     )
 
     def establecer_estado(message: str, color: str = MUTED):
+        if app_cerrando:
+            return
         status_text.value = message
         status_text.color = color
-        page.update()
+        actualizar_pagina_seguro()
 
     def sincronizar_documento_activo():
         if active_document is not None:
-            active_document["content"] = editor.value or ""
+            active_document["content"] = editor.value if editor.value is not None else ""
             active_document["saved_content"] = saved_content
 
     def dibujar_pestanas():
@@ -306,6 +541,17 @@ def iniciar_interfaz(page: ft.Page):
             path = document["path"]
             filename = path.name if path is not None else document["name"]
             is_dirty = document["content"] != document["saved_content"]
+            close_btn = configurar_sin_foco(
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    icon_size=15,
+                    icon_color=MUTED,
+                    tooltip="Cerrar archivo",
+                    on_click=lambda _, selected_id=document_id: cerrar_documento(
+                        selected_id
+                    ),
+                )
+            )
             tab_controls.append(
                 ft.Container(
                     content=ft.Row(
@@ -317,15 +563,7 @@ def iniciar_interfaz(page: ft.Page):
                                 max_lines=1,
                                 overflow=ft.TextOverflow.ELLIPSIS,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.CLOSE,
-                                icon_size=15,
-                                icon_color=MUTED,
-                                tooltip="Cerrar archivo",
-                                on_click=lambda _, selected_id=document_id: cerrar_documento(
-                                    selected_id
-                                ),
-                            ),
+                            close_btn,
                         ],
                         spacing=4,
                         tight=True,
@@ -349,13 +587,12 @@ def iniciar_interfaz(page: ft.Page):
 
     def actualizar_metadatos_editor():
         sincronizar_documento_activo()
-        is_dirty = (editor.value or "") != saved_content
         language_label.value = (
             active_path.suffix[1:].upper()
             if active_path and active_path.suffix
             else "SQL"
         )
-        contents = editor.value or ""
+        contents = editor.value if editor.value is not None else ""
         line_count = contents.count("\n") + 1
         actualizar_ancho_editor(contents)
         editor.max_lines = line_count + 2
@@ -395,47 +632,54 @@ def iniciar_interfaz(page: ft.Page):
         cursor_position_label.value = f"Ln {line}, Col {column}"
 
     async def revelar_posicion_editor(offset: int):
+        if app_cerrando:
+            return
         contents = editor.value or ""
         offset = max(0, min(offset, len(contents)))
         preceding_text = contents[:offset]
         line = preceding_text.count("\n") + 1
         line_top = (line - 1) * editor_line_height + 10
-        if editor_viewport_height and line_top < editor_scroll_offset:
-            await editor_scroll.scroll_to(offset=max(0, line_top), duration=120)
-        elif (
-            editor_viewport_height
-            and line_top + editor_line_height
-            > editor_scroll_offset + editor_viewport_height
-        ):
-            target = line_top - editor_viewport_height + editor_line_height
-            await editor_scroll.scroll_to(offset=max(0, target), duration=120)
-        line_start = preceding_text.rfind("\n") + 1
-        column = len(preceding_text[line_start:].expandtabs(4))
-        caret_x = column * 8.5 + 8
-        if caret_x < editor_horizontal_scroll_offset:
-            await editor_horizontal_scroll.scroll_to(
-                offset=max(0, caret_x - 8),
-                duration=120,
-            )
-        elif (
-            editor_horizontal_viewport_width
-            and caret_x
-            > editor_horizontal_scroll_offset + editor_horizontal_viewport_width - 24
-        ):
-            target = (
-                caret_x
-                - editor_horizontal_viewport_width
-                + 24
-            )
-            await editor_horizontal_scroll.scroll_to(
-                offset=max(0, target),
-                duration=120,
-            )
+        try:
+            if editor_viewport_height and line_top < editor_scroll_offset:
+                await editor_scroll.scroll_to(offset=max(0, line_top), duration=120)
+            elif (
+                editor_viewport_height
+                and line_top + editor_line_height
+                > editor_scroll_offset + editor_viewport_height
+            ):
+                target = line_top - editor_viewport_height + editor_line_height
+                await editor_scroll.scroll_to(offset=max(0, target), duration=120)
+            line_start = preceding_text.rfind("\n") + 1
+            column = len(preceding_text[line_start:].expandtabs(4))
+            caret_x = column * 8.5 + 8
+            if caret_x < editor_horizontal_scroll_offset:
+                await editor_horizontal_scroll.scroll_to(
+                    offset=max(0, caret_x - 8),
+                    duration=120,
+                )
+            elif (
+                editor_horizontal_viewport_width
+                and caret_x
+                > editor_horizontal_scroll_offset + editor_horizontal_viewport_width - 24
+            ):
+                target = (
+                    caret_x
+                    - editor_horizontal_viewport_width
+                    + 24
+                )
+                await editor_horizontal_scroll.scroll_to(
+                    offset=max(0, target),
+                    duration=120,
+                )
+        except RuntimeError:
+            pass
 
     async def al_cambiar_seleccion_editor(event):
+        if app_cerrando:
+            return
         actualizar_posicion_cursor(event.selection)
         await revelar_posicion_editor(event.selection.extent_offset)
-        page.update(cursor_position_label)
+        actualizar_pagina_seguro(cursor_position_label)
 
     search_matches: list[tuple[int, int]] = []
     active_search_match = -1
@@ -491,7 +735,7 @@ def iniciar_interfaz(page: ft.Page):
 
     async def seleccionar_coincidencia(index: int):
         nonlocal active_search_match
-        if not search_matches:
+        if not search_matches or app_cerrando:
             return
         active_search_match = index % len(search_matches)
         start, end = search_matches[active_search_match]
@@ -501,10 +745,12 @@ def iniciar_interfaz(page: ft.Page):
         )
         actualizar_vista_busqueda()
         await revelar_posicion_editor(start)
-        page.update(editor_preview, editor_preview_container, search_status)
+        actualizar_pagina_seguro(editor_preview, editor_preview_container, search_status)
 
     async def actualizar_busqueda(_=None):
         nonlocal search_matches, active_search_match
+        if app_cerrando:
+            return
         query = search_field.value or ""
         contents = editor.value or ""
         search_matches = (
@@ -526,9 +772,13 @@ def iniciar_interfaz(page: ft.Page):
                 )
             search_status.value = "0 coincidencias"
             actualizar_vista_busqueda()
-            page.update(editor_preview, editor_preview_container, search_status)
+            actualizar_pagina_seguro(editor_preview, editor_preview_container, search_status)
 
     async def abrir_busqueda(_=None):
+        nonlocal editor_has_focus
+        if app_cerrando:
+            return
+        editor_has_focus = False
         selected_text = ""
         if editor.selection and not editor.selection.is_collapsed:
             start = editor.selection.start
@@ -545,9 +795,12 @@ def iniciar_interfaz(page: ft.Page):
         editor.selection_color = ft.Colors.TRANSPARENT
         search_bar.visible = True
         actualizar_vista_busqueda()
-        page.update()
+        actualizar_pagina_seguro()
         await actualizar_busqueda()
-        await search_field.focus()
+        try:
+            await search_field.focus()
+        except RuntimeError:
+            pass
 
     async def buscar_siguiente(_=None):
         if search_matches:
@@ -558,6 +811,9 @@ def iniciar_interfaz(page: ft.Page):
             await seleccionar_coincidencia(active_search_match - 1)
 
     async def cerrar_busqueda(_=None):
+        nonlocal editor_has_focus
+        if app_cerrando:
+            return
         search_bar.visible = False
         editor_preview_container.visible = False
         editor.color = TEXT
@@ -568,17 +824,21 @@ def iniciar_interfaz(page: ft.Page):
             color=TEXT,
         )
         editor.selection_color = "#315275"
-        await editor.focus()
-        page.update(editor, editor_preview_container, search_bar)
+        editor_has_focus = True
+        try:
+            await editor.focus()
+        except RuntimeError:
+            pass
+        actualizar_pagina_seguro(editor, editor_preview_container, search_bar)
 
     search_field = ft.TextField(
         hint_text="Buscar en el archivo",
         height=38,
         content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
-        border_color=BORDER,
-        focused_border_color=ACCENT,
+        border=crear_borde_campo(BORDER, ACCENT),
         text_size=13,
         expand=True,
+        can_request_focus=True,
         on_change=actualizar_busqueda,
         on_submit=buscar_siguiente,
     )
@@ -587,23 +847,29 @@ def iniciar_interfaz(page: ft.Page):
             [
                 search_field,
                 search_status,
-                ft.IconButton(
-                    icon=ft.Icons.KEYBOARD_ARROW_UP,
-                    tooltip="Coincidencia anterior",
-                    icon_color=MUTED,
-                    on_click=buscar_anterior,
+                configurar_sin_foco(
+                    ft.IconButton(
+                        icon=ft.Icons.KEYBOARD_ARROW_UP,
+                        tooltip="Coincidencia anterior",
+                        icon_color=MUTED,
+                        on_click=buscar_anterior,
+                    )
                 ),
-                ft.IconButton(
-                    icon=ft.Icons.KEYBOARD_ARROW_DOWN,
-                    tooltip="Coincidencia siguiente",
-                    icon_color=MUTED,
-                    on_click=buscar_siguiente,
+                configurar_sin_foco(
+                    ft.IconButton(
+                        icon=ft.Icons.KEYBOARD_ARROW_DOWN,
+                        tooltip="Coincidencia siguiente",
+                        icon_color=MUTED,
+                        on_click=buscar_siguiente,
+                    )
                 ),
-                ft.IconButton(
-                    icon=ft.Icons.CLOSE,
-                    tooltip="Cerrar búsqueda",
-                    icon_color=MUTED,
-                    on_click=cerrar_busqueda,
+                configurar_sin_foco(
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        tooltip="Cerrar búsqueda",
+                        icon_color=MUTED,
+                        on_click=cerrar_busqueda,
+                    )
                 ),
             ],
             spacing=4,
@@ -615,8 +881,31 @@ def iniciar_interfaz(page: ft.Page):
     )
 
     def al_pulsar_tecla_pagina(event):
-        if event.ctrl and event.key.lower() == "f":
+        if app_cerrando:
+            return
+        key_upper = (event.key or "").upper()
+        if key_upper == "ESCAPE":
+            if active_context_menu_overlay is not None:
+                cerrar_menu_contextual()
+                return
+            if renaming_path is not None:
+                cancelar_renombrado_en_linea()
+                return
+            if search_bar.visible:
+                page.run_task(cerrar_busqueda)
+                return
+        if event.ctrl and key_upper == "F":
+            cerrar_menu_contextual()
             page.run_task(abrir_busqueda)
+        elif event.ctrl and key_upper == "S":
+            cerrar_menu_contextual()
+            page.run_task(guardar_archivo, None, True)
+        elif key_upper == "TAB" and editor_has_focus and not search_bar.visible:
+            # Evita que presionar Tab por accidente saque al usuario del editor
+            try:
+                page.run_task(editor.focus)
+            except RuntimeError:
+                pass
 
     page.on_keyboard_event = al_pulsar_tecla_pagina
 
@@ -742,6 +1031,8 @@ def iniciar_interfaz(page: ft.Page):
     def dibujar_terminal():
         nonlocal rendered_history_count, rendered_history_ids
         nonlocal terminal_refocus_pending
+        if app_cerrando:
+            return
         history_rows = list(terminal_screen.history.top)
         history_count = len(history_rows)
         history_ids = tuple(id(row) for row in history_rows)
@@ -796,7 +1087,7 @@ def iniciar_interfaz(page: ft.Page):
                             key=f"terminal-screen-{y}",
                         )
                         for y in range(terminal_screen.lines)
-                    )
+                    ),
                 ]
             else:
                 rebuild = True
@@ -835,11 +1126,15 @@ def iniciar_interfaz(page: ft.Page):
             if prompt_match:
                 terminal_prompt_label.value = prompt_match.group(1)
                 terminal_prompt_label.tooltip = prompt_match.group(1)
+                actualizar_control_seguro(terminal_prompt_label)
             terminal_output.controls = list(reversed(terminal_row_controls))
-            page.update(terminal_output, terminal_prompt_label)
-            if terminal_refocus_pending and terminal_has_focus:
+            actualizar_control_seguro(terminal_output)
+            if terminal_refocus_pending and terminal_has_focus and not app_cerrando:
                 terminal_refocus_pending = False
-                page.run_task(terminal_listener.focus)
+                try:
+                    page.run_task(terminal_listener.focus)
+                except RuntimeError:
+                    pass
         terminal_screen.dirty.clear()
 
     def convertir_estilo_texto(style):
@@ -855,25 +1150,34 @@ def iniciar_interfaz(page: ft.Page):
         )
 
     def informar_error_terminal(message: str):
+        if app_cerrando:
+            return
         status_text.value = message
         status_text.color = "#ff7c84"
         terminal_stream.feed(f"\r\n{message}\r\n")
         dibujar_terminal()
-        page.update()
+        actualizar_pagina_seguro()
 
     def leer_salida_terminal(
         process: PtyProcess,
         output_queue: queue.Queue[str | Exception | None],
     ):
-        while process.isalive():
+        while not app_cerrando and process.isalive():
             try:
-                output_queue.put(process.read())
-            except EOFError:
+                chunk = process.read()
+                if app_cerrando:
+                    break
+                output_queue.put(chunk)
+            except (EOFError, ConnectionResetError):
                 break
-            except WinptyError as error:
-                output_queue.put(error)
-                break
-            except OSError as error:
+            except (WinptyError, OSError) as error:
+                if (
+                    app_cerrando
+                    or isinstance(error, ConnectionResetError)
+                    or getattr(error, "winerror", None) == 10054
+                    or "10054" in str(error)
+                ):
+                    break
                 output_queue.put(error)
                 break
         output_queue.put(None)
@@ -882,11 +1186,11 @@ def iniciar_interfaz(page: ft.Page):
         process: PtyProcess,
         output_queue: queue.Queue[str | Exception | None],
     ):
-        while shell_process is process:
+        while not app_cerrando and shell_process is process:
             try:
                 output = output_queue.get_nowait()
             except queue.Empty:
-                if not process.isalive():
+                if app_cerrando or not process.isalive():
                     break
                 await asyncio.sleep(0.02)
                 continue
@@ -906,19 +1210,31 @@ def iniciar_interfaz(page: ft.Page):
             else:
                 finished = True
 
+            if app_cerrando:
+                break
+
             if chunks:
                 terminal_stream.feed("".join(chunks))
                 dibujar_terminal()
             for error in errors:
+                if (
+                    app_cerrando
+                    or isinstance(error, ConnectionResetError)
+                    or getattr(error, "winerror", None) == 10054
+                    or "10054" in str(error)
+                ):
+                    continue
                 informar_error_terminal(f"Error al leer PowerShell: {error}")
             if finished:
                 break
 
-        if shell_process is process:
+        if not app_cerrando and shell_process is process:
             establecer_estado("PowerShell finalizó", "#f0b45b")
 
     async def iniciar_powershell():
         nonlocal shell_process, terminal_stream
+        if app_cerrando:
+            return None
         if shell_process and shell_process.isalive():
             return shell_process
 
@@ -939,7 +1255,15 @@ def iniciar_interfaz(page: ft.Page):
                 dimensions=(terminal_rows, terminal_columns),
             )
         except (OSError, WinptyError) as error:
-            informar_error_terminal(f"No se pudo iniciar PowerShell: {error}")
+            if not app_cerrando:
+                informar_error_terminal(f"No se pudo iniciar PowerShell: {error}")
+            return None
+
+        if app_cerrando:
+            try:
+                process.close(force=True)
+            except Exception:
+                pass
             return None
 
         shell_process = process
@@ -954,17 +1278,23 @@ def iniciar_interfaz(page: ft.Page):
             daemon=True,
         ).start()
         establecer_estado(f"PowerShell activo · {root_directory}", "#56d68b")
-        page.run_task(procesar_salida_terminal, process, output_queue)
+        try:
+            page.run_task(procesar_salida_terminal, process, output_queue)
+        except RuntimeError:
+            pass
         return process
 
     def enviar_entrada_terminal(text: str):
+        if app_cerrando:
+            return
         if not shell_process or not shell_process.isalive():
             establecer_estado("PowerShell no está activo", "#f0b45b")
             return
         try:
             shell_process.write(text)
         except (EOFError, OSError, WinptyError) as error:
-            informar_error_terminal(f"No se pudo enviar la tecla: {error}")
+            if not app_cerrando:
+                informar_error_terminal(f"No se pudo enviar la tecla: {error}")
 
     special_keys = {
         "enter": "\r",
@@ -1013,13 +1343,21 @@ def iniciar_interfaz(page: ft.Page):
         return False
 
     async def copiar_seleccion_terminal(text: str):
-        await terminal_clipboard.set(text)
+        if app_cerrando:
+            return
+        copiar_portapapeles_sistema(text)
+        try:
+            await terminal_clipboard.set(text)
+        except Exception:
+            pass
         status_text.value = "Texto copiado"
         status_text.color = "#56d68b"
-        page.update(status_text)
+        actualizar_pagina_seguro(status_text)
 
     def manejar_tecla_terminal(key: str):
         nonlocal terminal_refocus_pending
+        if app_cerrando:
+            return
         if key in {" ", "Space", "Spacebar"}:
             key = " "
         normalized = normalizar_tecla(key)
@@ -1093,7 +1431,7 @@ def iniciar_interfaz(page: ft.Page):
         nonlocal terminal_columns, terminal_rows, terminal_resize_handle
         nonlocal terminal_content_width, rendered_terminal_width
         terminal_resize_handle = None
-        if pending_terminal_size is None:
+        if app_cerrando or pending_terminal_size is None:
             return
         columns, rows, content_width = pending_terminal_size
         dimensions_changed = (columns, rows) != (terminal_columns, terminal_rows)
@@ -1111,18 +1449,21 @@ def iniciar_interfaz(page: ft.Page):
             if terminal_row_controls:
                 reconstruir_filas_terminal(list(terminal_screen.history.top))
                 terminal_output.controls = list(reversed(terminal_row_controls))
-                page.update(terminal_output)
+                actualizar_control_seguro(terminal_output)
 
         if dimensions_changed and shell_process and shell_process.isalive():
             try:
                 shell_process.setwinsize(rows, columns)
-            except WinptyError as error:
-                informar_error_terminal(f"No se pudo redimensionar PowerShell: {error}")
+            except (WinptyError, OSError) as error:
+                if not app_cerrando:
+                    informar_error_terminal(f"No se pudo redimensionar PowerShell: {error}")
         if dimensions_changed:
             dibujar_terminal()
 
     def al_redimensionar_terminal(event):
         nonlocal pending_terminal_size, terminal_resize_handle
+        if app_cerrando:
+            return
         content_width = max(1, int(event.width) - 24)
         columns = max(20, min(240, int(content_width / 7.8)))
         rows = max(3, min(80, int(event.height / 18)))
@@ -1139,14 +1480,112 @@ def iniciar_interfaz(page: ft.Page):
         else:
             terminal_resize_handle = loop.call_later(0.12, aplicar_redimension_terminal)
 
+    # =====================================================================
+    # 2. REDIMENSIONAMIENTO FLUIDO EN VIVO CON ACTUALIZACIÓN AISLADA
+    # =====================================================================
+
+    terminal_divider_bar = ft.Container(
+        height=2,
+        bgcolor=BORDER,
+        border_radius=2,
+        width=64,
+    )
+    terminal_divider_label = ft.Text(
+        "",
+        size=10,
+        color=ACCENT,
+        font_family="Consolas",
+        weight=ft.FontWeight.W_600,
+        visible=False,
+    )
+
+    def obtener_altura_maxima_terminal():
+        return max(130, workspace_height + terminal_height - 130)
+
+    def al_redimensionar_area_trabajo(event):
+        nonlocal workspace_height, terminal_height, pending_drag_height
+        if app_cerrando:
+            return
+        workspace_height = event.height
+        maximum = obtener_altura_maxima_terminal()
+        if terminal_height > maximum:
+            terminal_height = maximum
+            pending_drag_height = float(terminal_height)
+            terminal_panel.height = terminal_height
+            actualizar_control_seguro(terminal_panel)
+
+    def iniciar_redimension_terminal(_):
+        nonlocal terminal_is_resizing, terminal_resize_handle
+        nonlocal pending_drag_height, last_terminal_drag_update
+        if app_cerrando:
+            return
+        terminal_is_resizing = True
+        pending_drag_height = float(terminal_height)
+        last_terminal_drag_update = 0.0
+        if terminal_resize_handle is not None:
+            terminal_resize_handle.cancel()
+            terminal_resize_handle = None
+        terminal_divider_bar.bgcolor = ACCENT
+        terminal_divider_bar.width = 96
+        terminal_divider_label.value = f"{int(pending_drag_height)} px"
+        terminal_divider_label.visible = True
+        actualizar_control_seguro(terminal_divider)
+
+    def redimensionar_terminal(event):
+        """
+        Redimensionamiento en vivo con actualización aislada (throttled ~50 FPS):
+        actualiza únicamente terminal_panel y terminal_divider_label sin llamar
+        a page.update() ni reconstruir las filas de pyte en cada píxel.
+        """
+        nonlocal pending_drag_height, terminal_height, last_terminal_drag_update
+        if app_cerrando:
+            return
+        delta = event.primary_delta
+        if delta is None and event.local_delta is not None:
+            delta = event.local_delta.dy
+        if delta is None:
+            return
+        maximum = obtener_altura_maxima_terminal()
+        prev_px = terminal_height
+        pending_drag_height = max(
+            130.0,
+            min(float(maximum), pending_drag_height - float(delta)),
+        )
+        new_px = int(pending_drag_height)
+        if new_px != prev_px:
+            terminal_height = new_px
+            terminal_panel.height = terminal_height
+            terminal_divider_label.value = f"{terminal_height} px"
+            now = time.monotonic()
+            if now - last_terminal_drag_update >= 0.02:
+                last_terminal_drag_update = now
+                actualizar_control_seguro(terminal_panel)
+                actualizar_control_seguro(terminal_divider_label)
+
     def finalizar_redimension_terminal(_):
+        """
+        Al soltar el clic del mouse, asegura la altura final del contenedor de la
+        consola de forma aislada y programa la reconfiguración única de pyte/PowerShell.
+        """
         nonlocal terminal_resize_handle, terminal_panel_update_handle
-        nonlocal terminal_is_resizing
+        nonlocal terminal_is_resizing, terminal_height
+        if app_cerrando:
+            return
         terminal_is_resizing = False
         if terminal_panel_update_handle is not None:
             terminal_panel_update_handle.cancel()
             terminal_panel_update_handle = None
-            terminal_panel.update()
+
+        terminal_height = int(pending_drag_height)
+        terminal_panel.height = terminal_height
+
+        terminal_divider_bar.bgcolor = BORDER
+        terminal_divider_bar.width = 64
+        terminal_divider_label.visible = False
+        terminal_divider_label.value = ""
+        actualizar_control_seguro(terminal_panel)
+        actualizar_control_seguro(terminal_divider)
+
         if terminal_resize_handle is not None:
             terminal_resize_handle.cancel()
         try:
@@ -1154,89 +1593,367 @@ def iniciar_interfaz(page: ft.Page):
         except RuntimeError:
             aplicar_redimension_terminal()
         else:
-            terminal_resize_handle = loop.call_later(0.15, aplicar_redimension_terminal)
-
-    def iniciar_redimension_terminal(_):
-        nonlocal terminal_is_resizing, terminal_resize_handle
-        terminal_is_resizing = True
-        if terminal_resize_handle is not None:
-            terminal_resize_handle.cancel()
-            terminal_resize_handle = None
-
-    def obtener_altura_maxima_terminal():
-        return max(130, workspace_height + terminal_height - 130)
-
-    def al_redimensionar_area_trabajo(event):
-        nonlocal workspace_height, terminal_height
-        workspace_height = event.height
-        maximum = obtener_altura_maxima_terminal()
-        if terminal_height > maximum:
-            terminal_height = maximum
-            terminal_panel.height = terminal_height
-            page.update()
-
-    def redimensionar_terminal(event):
-        nonlocal terminal_height, terminal_panel_update_handle
-        delta = event.primary_delta
-        if delta is None and event.local_delta is not None:
-            delta = event.local_delta.dy
-        if delta is None:
-            return
-        maximum = obtener_altura_maxima_terminal()
-        terminal_height = max(
-            130,
-            min(maximum, terminal_height - delta),
-        )
-        terminal_panel.height = terminal_height
-        if terminal_panel_update_handle is not None:
-            terminal_panel_update_handle.cancel()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            terminal_panel.update()
-        else:
-            terminal_panel_update_handle = loop.call_later(
-                0.03,
-                actualizar_vista_terminal_redimensionada,
-            )
-
-    def actualizar_vista_terminal_redimensionada():
-        nonlocal terminal_panel_update_handle
-        terminal_panel_update_handle = None
-        terminal_panel.update()
+            terminal_resize_handle = loop.call_later(0.08, aplicar_redimension_terminal)
 
     async def enfocar_terminal(_):
-        nonlocal terminal_has_focus, terminal_refocus_pending
+        nonlocal terminal_has_focus, terminal_refocus_pending, editor_has_focus
+        if app_cerrando:
+            return
         pressed_modifiers.clear()
+        editor_has_focus = False
         terminal_has_focus = True
         terminal_refocus_pending = False
-        await terminal_listener.focus()
+        try:
+            await terminal_listener.focus()
+        except RuntimeError:
+            return
         status_text.value = "Consola enfocada"
         status_text.color = "#56d68b"
-        page.update(status_text)
+        actualizar_pagina_seguro(status_text)
 
     def al_enfocar_editor(_):
-        nonlocal terminal_has_focus, terminal_refocus_pending
+        nonlocal terminal_has_focus, terminal_refocus_pending, editor_has_focus
+        editor_has_focus = True
         terminal_has_focus = False
         terminal_refocus_pending = False
 
-    def detener_powershell(_):
-        if shell_process and shell_process.isalive():
-            shell_process.close(force=True)
+    def detener_powershell(_=None):
+        nonlocal app_cerrando, shell_process
+        app_cerrando = True
+        if terminal_resize_handle is not None:
+            try:
+                terminal_resize_handle.cancel()
+            except Exception:
+                pass
+        if terminal_panel_update_handle is not None:
+            try:
+                terminal_panel_update_handle.cancel()
+            except Exception:
+                pass
+        proc = shell_process
+        shell_process = None
+        if proc is not None:
+            try:
+                if proc.isalive():
+                    proc.close(force=True)
+            except Exception:
+                pass
+
+    def manejar_evento_ventana(event):
+        ev_type = getattr(event, "type", None)
+        ev_data = str(getattr(event, "data", "") or "").lower()
+        if ev_type == ft.WindowEventType.CLOSE or ev_data == "close":
+            detener_powershell(event)
 
     page.on_close = detener_powershell
+    page.on_disconnect = detener_powershell
+    page.window.on_event = manejar_evento_ventana
+
+    # =====================================================================
+    # 3. MANEJO DE IDENTACIÓN EN VIVO ('>>' y '\t' -> 4 ESPACIOS + ENTER)
+    # =====================================================================
+
+    def procesar_identacion_en_vivo(old_text: str, new_text: str) -> tuple[str, int | None]:
+        """
+        Aplica reemplazo instantáneo de '>>' o '\\t' por 4 espacios ('    ')
+        y auto-identación al presionar Enter (heredando sangría previa y sumando
+        4 espacios si la línea anterior terminaba en ':').
+        Devuelve (texto_transformado, nuevo_offset_cursor_o_None).
+        """
+        if new_text == old_text:
+            return new_text, None
+
+        # Normalizar saltos de línea CRLF si se pegó texto
+        if "\r\n" in new_text:
+            new_text = new_text.replace("\r\n", "\n")
+
+        # 1. Calcular prefijo y sufijo común entre old_text y new_text para ubicar la edición
+        min_len = min(len(old_text), len(new_text))
+        prefix_len = 0
+        while prefix_len < min_len and old_text[prefix_len] == new_text[prefix_len]:
+            prefix_len += 1
+
+        suffix_len = 0
+        max_suffix = min(len(old_text) - prefix_len, len(new_text) - prefix_len)
+        while (
+            suffix_len < max_suffix
+            and old_text[len(old_text) - 1 - suffix_len]
+            == new_text[len(new_text) - 1 - suffix_len]
+        ):
+            suffix_len += 1
+
+        inserted = new_text[prefix_len : len(new_text) - suffix_len]
+        caret_offset: int | None = None
+
+        # 2. Caso Enter: el usuario acaba de insertar un salto de línea '\n'
+        if inserted == "\n" and len(new_text) >= len(old_text):
+            line_start = new_text.rfind("\n", 0, prefix_len) + 1
+            prev_line = new_text[line_start:prefix_len]
+            prev_indent_len = len(prev_line) - len(prev_line.lstrip(" "))
+            prev_indent = " " * prev_indent_len
+            prev_code = prev_line.split("//", 1)[0].rstrip()
+
+            if prev_code.endswith(":"):
+                auto_indent = prev_indent + "    "
+            elif prev_indent_len > 0:
+                auto_indent = prev_indent
+            else:
+                auto_indent = ""
+
+            if auto_indent:
+                insert_pos = prefix_len + 1
+                new_text = (
+                    new_text[:insert_pos]
+                    + auto_indent
+                    + new_text[insert_pos:]
+                )
+                caret_offset = insert_pos + len(auto_indent)
+
+        # 3. Caso secuencia rápida '>>' o carácter '\t' -> reemplazar en vivo por 4 espacios
+        if "\t" in new_text:
+            tab_idx = new_text.find("\t")
+            count_tabs = new_text.count("\t")
+            new_text = new_text.replace("\t", "    ")
+            caret_offset = tab_idx + 4 * count_tabs
+
+        if ">>" in new_text:
+            seq_idx = new_text.find(">>")
+            new_text = new_text.replace(">>", "    ")
+            caret_offset = seq_idx + 4
+
+        return new_text, caret_offset
 
     async def al_cambiar_editor(event):
-        contents = event.data if isinstance(event.data, str) else editor.value or ""
-        editor.value = contents
+        nonlocal previous_editor_text
+        if app_cerrando:
+            return
+        raw_contents = (
+            event.data
+            if isinstance(event.data, str)
+            else (editor.value if editor.value is not None else "")
+        )
+        transformed, new_caret = procesar_identacion_en_vivo(
+            previous_editor_text,
+            raw_contents,
+        )
+        previous_editor_text = transformed
+        editor.value = transformed
+        if new_caret is not None:
+            clamped_caret = max(0, min(new_caret, len(transformed)))
+            editor.selection = ft.TextSelection(clamped_caret, clamped_caret)
         actualizar_metadatos_editor()
         if search_bar.visible:
             await actualizar_busqueda()
-        page.update()
+        actualizar_pagina_seguro()
 
     editor.on_change = al_cambiar_editor
     editor.on_focus = al_enfocar_editor
     editor.on_selection_change = al_cambiar_seleccion_editor
+
+    # =====================================================================
+    # 1. SISTEMA UNIFICADO DE MENÚ CONTEXTUAL FLOTANTE (page.overlay)
+    #    Y RENOMBRADO EN LÍNEA EN EL EXPLORADOR DE ARCHIVOS
+    # =====================================================================
+
+    def cerrar_menu_contextual(_=None):
+        nonlocal active_context_menu_overlay
+        if active_context_menu_overlay is not None:
+            try:
+                if active_context_menu_overlay in page.overlay:
+                    page.overlay.remove(active_context_menu_overlay)
+            except Exception:
+                pass
+            active_context_menu_overlay = None
+            actualizar_pagina_seguro()
+
+    def extraer_coordenadas_clic(event) -> tuple[float, float]:
+        """
+        Extrae de forma segura las coordenadas globales (x, y) de un TapEvent
+        en Flet 1.0+, soportando event.global_position.{x,y} y event.global_{x,y}.
+        """
+        x_val = None
+        y_val = None
+        if event is not None:
+            global_pos = getattr(event, "global_position", None)
+            if global_pos is not None:
+                x_val = getattr(global_pos, "x", None)
+                y_val = getattr(global_pos, "y", None)
+            if x_val is None:
+                x_val = getattr(event, "global_x", None)
+            if y_val is None:
+                y_val = getattr(event, "global_y", None)
+            if x_val is None or y_val is None:
+                local_pos = getattr(event, "local_position", None)
+                if local_pos is not None:
+                    if x_val is None:
+                        x_val = getattr(local_pos, "x", None)
+                    if y_val is None:
+                        y_val = getattr(local_pos, "y", None)
+            if x_val is None:
+                x_val = getattr(event, "local_x", None)
+            if y_val is None:
+                y_val = getattr(event, "local_y", None)
+        try:
+            x_float = float(x_val) if x_val is not None else 160.0
+        except (TypeError, ValueError):
+            x_float = 160.0
+        try:
+            y_float = float(y_val) if y_val is not None else 160.0
+        except (TypeError, ValueError):
+            y_float = 160.0
+        return x_float, y_float
+
+    def ajustar_coordenadas_menu(
+        x: float,
+        y: float,
+        menu_width: float,
+        menu_height: float,
+    ) -> tuple[float, float]:
+        """
+        Ajusta (clamp) las coordenadas (left, top) contra las dimensiones de la
+        ventana para que el menú contextual nunca se desborde fuera de la pantalla.
+        """
+        win_w = getattr(page, "width", None)
+        if not win_w:
+            win_obj = getattr(page, "window", None)
+            win_w = getattr(win_obj, "width", None) if win_obj is not None else None
+        win_h = getattr(page, "height", None)
+        if not win_h:
+            win_obj = getattr(page, "window", None)
+            win_h = getattr(win_obj, "height", None) if win_obj is not None else None
+
+        try:
+            max_w = float(win_w) if win_w else 1280.0
+        except (TypeError, ValueError):
+            max_w = 1280.0
+        try:
+            max_h = float(win_h) if win_h else 800.0
+        except (TypeError, ValueError):
+            max_h = 800.0
+
+        left = max(8.0, min(float(x), max(8.0, max_w - float(menu_width) - 10.0)))
+        top = max(8.0, min(float(y), max(8.0, max_h - float(menu_height) - 10.0)))
+        return left, top
+
+    def crear_item_menu_contextual(
+        texto: str,
+        icono,
+        on_click,
+        *,
+        atajo: str | None = None,
+        color_texto: str = TEXT,
+        color_icono: str = MUTED,
+    ) -> ft.Container:
+        row_controls: list[ft.Control] = [
+            ft.Icon(icono, size=15, color=color_icono),
+            ft.Text(
+                texto,
+                size=12.5,
+                color=color_texto,
+                max_lines=1,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                expand=True,
+            ),
+        ]
+        if atajo:
+            row_controls.append(
+                ft.Text(
+                    atajo,
+                    size=11,
+                    color=MUTED,
+                    font_family="Consolas",
+                )
+            )
+
+        item_container = ft.Container(
+            content=ft.Row(
+                row_controls,
+                spacing=9,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            height=31,
+            border_radius=4,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=5),
+            bgcolor="transparent",
+            ink=True,
+        )
+
+        def al_pasar_mouse(ev):
+            is_hover = ev.data is True or str(ev.data).lower() == "true"
+            item_container.bgcolor = PANEL_LIGHT if is_hover else "transparent"
+            actualizar_control_seguro(item_container)
+
+        async def al_hacer_clic(ev):
+            cerrar_menu_contextual()
+            if on_click is not None:
+                res = on_click(ev)
+                if asyncio.iscoroutine(res):
+                    await res
+
+        item_container.on_hover = al_pasar_mouse
+        item_container.on_click = al_hacer_clic
+        return item_container
+
+    def mostrar_menu_contextual_flotante(
+        event,
+        items: list[ft.Control],
+        width: int = 240,
+    ):
+        nonlocal active_context_menu_overlay
+        if app_cerrando:
+            return
+        if active_context_menu_overlay is not None:
+            try:
+                if active_context_menu_overlay in page.overlay:
+                    page.overlay.remove(active_context_menu_overlay)
+            except Exception:
+                pass
+            active_context_menu_overlay = None
+
+        estimated_height = (
+            sum(7 if isinstance(item, ft.Divider) else 32 for item in items) + 12
+        )
+        raw_x, raw_y = extraer_coordenadas_clic(event)
+        left, top = ajustar_coordenadas_menu(raw_x, raw_y, width, estimated_height)
+
+        menu_card = ft.Container(
+            content=ft.Column(
+                items,
+                tight=True,
+                spacing=1,
+            ),
+            width=width,
+            left=left,
+            top=top,
+            bgcolor="#182334",
+            border=ft.Border.all(1, "#324663"),
+            border_radius=7,
+            padding=ft.Padding.symmetric(vertical=4, horizontal=4),
+            shadow=ft.BoxShadow(
+                blur_radius=16,
+                spread_radius=0,
+                color="#00000099",
+                offset=ft.Offset(0, 6),
+            ),
+        )
+
+        backdrop = ft.GestureDetector(
+            content=ft.Container(
+                expand=True,
+                bgcolor="transparent",
+            ),
+            on_tap=cerrar_menu_contextual,
+            on_secondary_tap_down=cerrar_menu_contextual,
+            expand=True,
+        )
+
+        overlay_stack = ft.Stack(
+            controls=[backdrop, menu_card],
+            expand=True,
+        )
+        active_context_menu_overlay = overlay_stack
+        page.overlay.append(overlay_stack)
+        actualizar_pagina_seguro()
 
     def crear_fila_arbol(
         label: str,
@@ -1246,6 +1963,7 @@ def iniciar_interfaz(page: ft.Page):
         color: str = TEXT,
         selected: bool = False,
         on_click=None,
+        on_secondary_click=None,
         leading_icon=None,
         horizontal_scroll: bool = False,
     ):
@@ -1280,16 +1998,263 @@ def iniciar_interfaz(page: ft.Page):
             padding=ft.Padding.only(left=8 + depth * 14, right=7, top=5, bottom=5),
             bgcolor="#294a70" if selected else "transparent",
             border_radius=4,
-            on_click=on_click,
+            on_click=on_click if on_secondary_click is None else None,
             ink=on_click is not None,
             data=(label, depth),
         )
+        if on_secondary_click is not None:
+            detector = ft.GestureDetector(
+                content=row,
+                mouse_cursor=ft.MouseCursor.CLICK,
+                on_tap=on_click,
+                on_secondary_tap_down=on_secondary_click,
+                data=(label, depth),
+            )
+            return detector
         return row
 
     def crear_fila_arbol_sintactico(*args, **kwargs):
         return crear_fila_arbol(*args, **kwargs, horizontal_scroll=True)
 
+    def iniciar_renombrado_en_linea(target_path: Path):
+        nonlocal renaming_path
+        renaming_path = target_path
+        dibujar_arbol_directorios()
+
+    def cancelar_renombrado_en_linea(_=None):
+        nonlocal renaming_path
+        if renaming_path is not None:
+            renaming_path = None
+            dibujar_arbol_directorios()
+
+    def confirmar_renombrado_en_linea(target_path: Path, nuevo_texto: str | None):
+        nonlocal active_path, renaming_path
+        if renaming_path != target_path:
+            return
+        renaming_path = None
+        nuevo_nombre = (nuevo_texto or "").strip()
+        if not nuevo_nombre or nuevo_nombre == target_path.name:
+            dibujar_arbol_directorios()
+            return
+        if nuevo_nombre in {".", ".."} or any(sep in nuevo_nombre for sep in ("/", "\\")):
+            dibujar_arbol_directorios()
+            establecer_estado("Nombre de archivo o carpeta inválido.", "#ff7c84")
+            return
+
+        nueva_ruta = target_path.with_name(nuevo_nombre).resolve()
+        old_resolved = target_path.resolve()
+        if nueva_ruta == old_resolved:
+            dibujar_arbol_directorios()
+            return
+        if nueva_ruta.exists():
+            dibujar_arbol_directorios()
+            establecer_estado(f"Ya existe '{nuevo_nombre}' en esta carpeta.", "#ff7c84")
+            return
+
+        try:
+            target_path.rename(nueva_ruta)
+        except OSError as exc:
+            dibujar_arbol_directorios()
+            establecer_estado(f"No se pudo renombrar: {exc}", "#ff7c84")
+            return
+
+        for doc in documents:
+            if doc["path"] is not None:
+                doc_resolved = doc["path"].resolve()
+                if doc_resolved == old_resolved:
+                    doc["path"] = nueva_ruta
+                    doc["name"] = nueva_ruta.name
+                elif old_resolved in doc_resolved.parents:
+                    rel = doc_resolved.relative_to(old_resolved)
+                    doc["path"] = nueva_ruta / rel
+
+        if active_path is not None:
+            act_resolved = active_path.resolve()
+            if act_resolved == old_resolved:
+                active_path = nueva_ruta
+            elif old_resolved in act_resolved.parents:
+                active_path = nueva_ruta / act_resolved.relative_to(old_resolved)
+
+        nuevas_expandidas: set[Path] = set()
+        for exp_dir in expanded_directories:
+            exp_resolved = exp_dir.resolve()
+            if exp_resolved == old_resolved:
+                nuevas_expandidas.add(nueva_ruta)
+            elif old_resolved in exp_resolved.parents:
+                nuevas_expandidas.add(nueva_ruta / exp_resolved.relative_to(old_resolved))
+            else:
+                nuevas_expandidas.add(exp_dir)
+        expanded_directories.clear()
+        expanded_directories.update(nuevas_expandidas)
+
+        actualizar_metadatos_editor()
+        dibujar_arbol_directorios()
+        establecer_estado(f"Renombrado · {target_path.name} → {nueva_ruta.name}", "#56d68b")
+
+    def crear_fila_renombrado_en_linea(
+        target_path: Path,
+        icon,
+        depth: int,
+        *,
+        color: str = TEXT,
+        leading_icon=None,
+    ):
+        prefix = (
+            ft.Icon(leading_icon, size=16, color=MUTED)
+            if leading_icon is not None
+            else ft.Container(width=16)
+        )
+        inline_field = ft.TextField(
+            value=target_path.name,
+            autofocus=True,
+            dense=True,
+            height=26,
+            width=max(150, len(target_path.name) * 8 + 36),
+            text_size=12.5,
+            color=TEXT,
+            bgcolor="#111a28",
+            cursor_color=ACCENT,
+            content_padding=ft.Padding.symmetric(horizontal=6, vertical=3),
+            border=crear_borde_campo(ACCENT, ACCENT, radio=4),
+            on_submit=lambda ev, p=target_path: confirmar_renombrado_en_linea(
+                p, ev.control.value
+            ),
+            on_blur=lambda ev, p=target_path: confirmar_renombrado_en_linea(
+                p, ev.control.value
+            ),
+        )
+        return ft.Container(
+            content=ft.Row(
+                [
+                    prefix,
+                    ft.Icon(icon, size=16, color=color),
+                    inline_field,
+                ],
+                spacing=7,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.only(left=8 + depth * 14, right=7, top=2, bottom=2),
+            bgcolor="#203149",
+            border_radius=4,
+            data=(target_path.name, depth),
+        )
+
+    def abrir_dialogo_eliminar_archivo(target_path: Path):
+        nonlocal active_document, active_path, saved_content, previous_editor_text
+        old_resolved = target_path.resolve()
+        es_directorio = target_path.is_dir()
+
+        def confirmar_eliminacion(_=None):
+            nonlocal active_document, active_path, saved_content, previous_editor_text
+            try:
+                if es_directorio:
+                    shutil.rmtree(target_path)
+                else:
+                    target_path.unlink()
+            except OSError as exc:
+                page.pop_dialog()
+                establecer_estado(f"No se pudo eliminar {target_path.name}: {exc}", "#ff7c84")
+                return
+
+            expanded_directories.discard(old_resolved)
+
+            # Si el archivo estaba abierto en el editor, cerrarlo y limpiar
+            docs_a_remover = [
+                doc for doc in documents
+                if doc["path"] is not None
+                and (
+                    doc["path"].resolve() == old_resolved
+                    or (es_directorio and old_resolved in doc["path"].resolve().parents)
+                )
+            ]
+            estaba_activo = any(doc is active_document for doc in docs_a_remover)
+            for doc in docs_a_remover:
+                documents.remove(doc)
+
+            if estaba_activo:
+                active_document = None
+                if documents:
+                    activar_documento(documents[-1]["id"])
+                else:
+                    active_path = None
+                    saved_content = ""
+                    previous_editor_text = ""
+                    editor.value = ""
+
+            page.pop_dialog()
+            actualizar_metadatos_editor()
+            dibujar_arbol_directorios()
+            establecer_estado(f"Eliminado · {target_path.name}", "#56d68b")
+            actualizar_pagina_seguro()
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Confirmar eliminación", size=15, weight=ft.FontWeight.W_700),
+                content=ft.Text(
+                    f"¿Estás seguro de que deseas eliminar permanentemente '{target_path.name}' del disco?"
+                ),
+                actions=[
+                    ft.TextButton("Cancelar", on_click=lambda _: page.pop_dialog()),
+                    ft.FilledButton(
+                        "Eliminar",
+                        bgcolor="#d9534f",
+                        color=ft.Colors.WHITE,
+                        on_click=confirmar_eliminacion,
+                    ),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+        )
+
+    def abrir_menu_contextual_explorador(target_path: Path, event=None):
+        ruta_absoluta = str(target_path.resolve())
+
+        async def accion_copiar_ruta(_):
+            copiar_portapapeles_sistema(ruta_absoluta)
+            try:
+                await terminal_clipboard.set(ruta_absoluta)
+            except Exception:
+                pass
+            establecer_estado(f"Ruta copiada · {ruta_absoluta}", "#56d68b")
+
+        def accion_renombrar(_):
+            iniciar_renombrado_en_linea(target_path)
+
+        def accion_eliminar(_):
+            abrir_dialogo_eliminar_archivo(target_path)
+
+        mostrar_menu_contextual_flotante(
+            event,
+            items=[
+                crear_item_menu_contextual(
+                    "Copiar ruta",
+                    ft.Icons.CONTENT_COPY,
+                    accion_copiar_ruta,
+                    color_icono=ACCENT,
+                ),
+                crear_item_menu_contextual(
+                    "Renombrar",
+                    ft.Icons.EDIT_OUTLINED,
+                    accion_renombrar,
+                    color_icono=BLUE,
+                ),
+                ft.Divider(height=5, thickness=1, color=BORDER),
+                crear_item_menu_contextual(
+                    "Eliminar",
+                    ft.Icons.DELETE_OUTLINE,
+                    accion_eliminar,
+                    color_texto="#ff7c84",
+                    color_icono="#ff7c84",
+                ),
+            ],
+            width=240,
+        )
+
     def dibujar_arbol_directorios():
+        if app_cerrando:
+            return
         rows = []
 
         def agregar_directorio(path: Path, depth: int, is_root: bool = False):
@@ -1302,28 +2267,51 @@ def iniciar_interfaz(page: ft.Page):
                     expanded_directories.add(path)
                 dibujar_arbol_directorios()
 
-            rows.append(
-                crear_fila_arbol(
-                    path.name or str(path),
-                    ft.Icons.FOLDER_OPEN if is_expanded else ft.Icons.FOLDER,
-                    depth,
-                    color="#f0c75e",
-                    horizontal_scroll=True,
-                    leading_icon=(
-                        ft.Icons.KEYBOARD_ARROW_DOWN
-                        if is_expanded
-                        else ft.Icons.CHEVRON_RIGHT
-                    ),
-                    on_click=alternar_directorio,
-                )
+            dir_icon = ft.Icons.FOLDER_OPEN if is_expanded else ft.Icons.FOLDER
+            dir_leading = (
+                ft.Icons.KEYBOARD_ARROW_DOWN
+                if is_expanded
+                else ft.Icons.CHEVRON_RIGHT
             )
+            if not is_root and renaming_path is not None and path == renaming_path:
+                rows.append(
+                    crear_fila_renombrado_en_linea(
+                        path,
+                        dir_icon,
+                        depth,
+                        color="#f0c75e",
+                        leading_icon=dir_leading,
+                    )
+                )
+            else:
+                rows.append(
+                    crear_fila_arbol(
+                        path.name or str(path),
+                        dir_icon,
+                        depth,
+                        color="#f0c75e",
+                        horizontal_scroll=True,
+                        leading_icon=dir_leading,
+                        on_click=alternar_directorio,
+                        on_secondary_click=(
+                            None
+                            if is_root
+                            else lambda ev, selected_dir=path: abrir_menu_contextual_explorador(
+                                selected_dir, ev
+                            )
+                        ),
+                    )
+                )
             if not is_expanded:
                 return
 
             try:
                 entries = sorted(
                     path.iterdir(),
-                    key=lambda entry: (not (entry.is_dir() and not entry.is_symlink()), entry.name.casefold()),
+                    key=lambda entry: (
+                        not (entry.is_dir() and not entry.is_symlink()),
+                        entry.name.casefold(),
+                    ),
                 )
             except OSError as error:
                 rows.append(
@@ -1344,17 +2332,31 @@ def iniciar_interfaz(page: ft.Page):
                     if entry.suffix.lower() in {".py", ".sql", ".txt", ".json", ".yaml", ".yml"}
                     else ft.Icons.INSERT_DRIVE_FILE
                 )
-                rows.append(
-                    crear_fila_arbol(
-                        entry.name,
-                        file_icon,
-                        depth + 1,
-                        color=BLUE if file_icon == ft.Icons.CODE else "#a9b8cb",
-                        selected=entry == active_path,
-                        horizontal_scroll=True,
-                        on_click=lambda _, selected_path=entry: abrir_ruta(selected_path),
+                file_color = BLUE if file_icon == ft.Icons.CODE else "#a9b8cb"
+                if renaming_path is not None and entry == renaming_path:
+                    rows.append(
+                        crear_fila_renombrado_en_linea(
+                            entry,
+                            file_icon,
+                            depth + 1,
+                            color=file_color,
+                        )
                     )
-                )
+                else:
+                    rows.append(
+                        crear_fila_arbol(
+                            entry.name,
+                            file_icon,
+                            depth + 1,
+                            color=file_color,
+                            selected=entry == active_path,
+                            horizontal_scroll=True,
+                            on_click=lambda _, selected_path=entry: abrir_ruta(selected_path),
+                            on_secondary_click=lambda ev, selected_path=entry: abrir_menu_contextual_explorador(
+                                selected_path, ev
+                            ),
+                        )
+                    )
 
         agregar_directorio(root_directory, 0, is_root=True)
         explorer_body.controls = rows
@@ -1370,7 +2372,7 @@ def iniciar_interfaz(page: ft.Page):
                 default=246,
             ),
         )
-        explorer_body.update()
+        actualizar_control_seguro(explorer_body)
 
     def abrir_ruta(path: Path):
         path = path.resolve()
@@ -1383,16 +2385,20 @@ def iniciar_interfaz(page: ft.Page):
             return
 
         try:
-            contents = path.read_text(encoding="utf-8")
+            raw_contents = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             establecer_estado(f"No se pudo abrir {path.name}: {error}", "#ff7c84")
             return
+        # Reemplazar automáticamente todos los caracteres '\t' por 4 espacios explícitos
+        contents = normalizar_tabulaciones(raw_contents)
         crear_documento(path, contents, contents)
         establecer_estado(f"Abierto · {path}", "#56d68b")
 
     def crear_documento(path: Path | None, contents: str, original_contents: str):
-        nonlocal active_document, active_path, saved_content, next_document_id
+        nonlocal active_document, active_path, saved_content, next_document_id, previous_editor_text
         sincronizar_documento_activo()
+        contents = normalizar_tabulaciones(contents)
+        original_contents = normalizar_tabulaciones(original_contents)
         document = {
             "id": next_document_id,
             "path": path,
@@ -1405,13 +2411,19 @@ def iniciar_interfaz(page: ft.Page):
         active_document = document
         active_path = path
         saved_content = original_contents
+        previous_editor_text = contents
         editor.value = contents
+        if contents.strip():
+            session_symbol_table.merge_from(
+                build_context_symbol_table(contents, fallback_table=session_symbol_table),
+                overwrite=True,
+            )
         actualizar_metadatos_editor()
         dibujar_arbol_directorios()
-        page.update()
+        actualizar_pagina_seguro()
 
     def activar_documento(document_id: int):
-        nonlocal active_document, active_path, saved_content
+        nonlocal active_document, active_path, saved_content, previous_editor_text
         sincronizar_documento_activo()
         document = next(
             (item for item in documents if item["id"] == document_id),
@@ -1419,16 +2431,23 @@ def iniciar_interfaz(page: ft.Page):
         )
         if document is None:
             return
+        document["content"] = normalizar_tabulaciones(document["content"])
         active_document = document
         active_path = document["path"]
         saved_content = document["saved_content"]
+        previous_editor_text = document["content"]
         editor.value = document["content"]
+        if document["content"].strip():
+            session_symbol_table.merge_from(
+                build_context_symbol_table(document["content"], fallback_table=session_symbol_table),
+                overwrite=True,
+            )
         actualizar_metadatos_editor()
         dibujar_arbol_directorios()
-        page.update()
+        actualizar_pagina_seguro()
 
     def cerrar_documento_ahora(document_id: int):
-        nonlocal active_document, active_path, saved_content
+        nonlocal active_document, active_path, saved_content, previous_editor_text
         sincronizar_documento_activo()
         document_index = next(
             (
@@ -1450,14 +2469,15 @@ def iniciar_interfaz(page: ft.Page):
             else:
                 active_path = None
                 saved_content = ""
+                previous_editor_text = ""
                 editor.value = ""
                 actualizar_metadatos_editor()
                 dibujar_arbol_directorios()
-                page.update()
+                actualizar_pagina_seguro()
         else:
             actualizar_metadatos_editor()
             dibujar_arbol_directorios()
-            page.update()
+            actualizar_pagina_seguro()
 
     def cerrar_documento(document_id: int):
         sincronizar_documento_activo()
@@ -1526,7 +2546,7 @@ def iniciar_interfaz(page: ft.Page):
                 process.write(f"Set-Location -LiteralPath '{command}'\r")
             except (EOFError, OSError, WinptyError) as error:
                 informar_error_terminal(f"No se pudo cambiar de carpeta en PowerShell: {error}")
-        page.update()
+        actualizar_pagina_seguro()
 
     async def elegir_archivo(_):
         picked_files = await file_picker.pick_files(
@@ -1537,64 +2557,74 @@ def iniciar_interfaz(page: ft.Page):
         if picked_files and picked_files[0].path:
             abrir_ruta(Path(picked_files[0].path))
 
-    async def guardar_archivo(_):
+    async def guardar_archivo(_=None, desde_atajo: bool = False):
         nonlocal active_path, saved_content
         if active_document is None:
-            establecer_estado("No hay ningún archivo abierto", "#f0b45b")
+            establecer_estado("No hay ningún archivo abierto para guardar", "#f0b45b")
             return
         target = active_path
         if target is None:
-            selected = await file_picker.guardar_archivo(
+            default_filename = active_document.get("name") or "consulta.sql"
+            selected = await file_picker.save_file(
                 dialog_title="Guardar archivo",
-                file_name="consulta.sql",
+                file_name=default_filename,
                 initial_directory=str(root_directory),
             )
-            if not selected:
+            if selected is None or str(selected).strip() == "":
                 return
             target = Path(selected)
+
+        # Permitir guardar incluso cuando el archivo está completamente vacío ("")
+        contenido_actual = editor.value if editor.value is not None else ""
         try:
-            target.write_text(editor.value or "", encoding="utf-8")
+            target.write_text(contenido_actual, encoding="utf-8")
         except OSError as error:
             establecer_estado(f"No se pudo guardar {target.name}: {error}", "#ff7c84")
             return
+
         active_path = target
-        saved_content = editor.value or ""
+        saved_content = contenido_actual
         active_document["path"] = target
         active_document["name"] = target.name
         active_document["content"] = saved_content
         active_document["saved_content"] = saved_content
         actualizar_metadatos_editor()
         dibujar_arbol_directorios()
-        establecer_estado(f"Guardado · {target}", "#56d68b")
-        page.update()
+        prefijo = "✓ Guardado (Ctrl+S)" if desde_atajo else "✓ Guardado"
+        establecer_estado(f"{prefijo} · {target}", "#56d68b")
+        actualizar_pagina_seguro()
 
     def crear_archivo_nuevo(_):
         crear_documento(None, "", "")
         establecer_estado("Nuevo archivo", MUTED)
-        page.update()
+        actualizar_pagina_seguro()
 
     async def animar_clic_boton(button, event, callback, pressed_color=None):
+        if app_cerrando:
+            return
         original_color = button.bgcolor
         button.scale = ft.Scale(scale=0.90)
         if pressed_color is not None:
             button.bgcolor = pressed_color
-        button.update()
+        actualizar_control_seguro(button)
         await asyncio.sleep(0.12)
         button.scale = ft.Scale(scale=1)
         button.bgcolor = original_color
-        button.update()
+        actualizar_control_seguro(button)
         if callback is not None:
             result = callback(event)
             if asyncio.iscoroutine(result):
                 await result
 
     def crear_boton_icono(icon, tooltip, on_click=None, color=MUTED):
-        button = ft.IconButton(
-            icon=icon,
-            icon_size=18,
-            icon_color=color,
-            tooltip=tooltip,
-            animate_scale=ft.Animation(130, ft.AnimationCurve.EASE_OUT),
+        button = configurar_sin_foco(
+            ft.IconButton(
+                icon=icon,
+                icon_size=18,
+                icon_color=color,
+                tooltip=tooltip,
+                animate_scale=ft.Animation(130, ft.AnimationCurve.EASE_OUT),
+            )
         )
 
         async def manejar_clic(event):
@@ -1604,13 +2634,15 @@ def iniciar_interfaz(page: ft.Page):
         return button
 
     def crear_boton_accion(label, icon, color, on_click=None, pressed_color=None):
-        button = ft.FilledButton(
-            content=ft.Text(label, size=13, weight=ft.FontWeight.W_600),
-            icon=icon,
-            bgcolor=color,
-            color=ft.Colors.WHITE,
-            height=38,
-            animate_scale=ft.Animation(130, ft.AnimationCurve.EASE_OUT),
+        button = configurar_sin_foco(
+            ft.FilledButton(
+                content=ft.Text(label, size=13, weight=ft.FontWeight.W_600),
+                icon=icon,
+                bgcolor=color,
+                color=ft.Colors.WHITE,
+                height=38,
+                animate_scale=ft.Animation(130, ft.AnimationCurve.EASE_OUT),
+            )
         )
 
         async def manejar_clic(event):
@@ -1634,6 +2666,616 @@ def iniciar_interfaz(page: ft.Page):
             ),
             bgcolor=HEADER,
             padding=ft.Padding.symmetric(horizontal=11, vertical=9),
+        )
+
+    # =====================================================================
+    # 4.4 COMPILAR Y EJECUTAR SELECCIÓN DESDE EL PORTAPAPELES
+    # =====================================================================
+
+    def escribir_en_consola(texto: str):
+        if app_cerrando:
+            return
+        normalizado = texto.replace("\r\n", "\n").replace("\n", "\r\n")
+        terminal_stream.feed(f"\r\n{normalizado}\r\n")
+        dibujar_terminal()
+
+    def resumir_expresion_ast(nodo) -> str:
+        if nodo is None:
+            return ""
+        if isinstance(nodo, Literal):
+            if nodo.literal_type.upper() == "STRING_LITERAL":
+                return f'"{nodo.value}"'
+            return str(nodo.value)
+        if isinstance(nodo, Identifier):
+            return nodo.name
+        if isinstance(nodo, Parameter):
+            return f"{nodo.name} = {resumir_expresion_ast(nodo.value)}"
+        if isinstance(nodo, UnaryOperation):
+            op = f"{nodo.operator} " if nodo.operator.upper() == "NOT" else nodo.operator
+            return f"{op}{resumir_expresion_ast(nodo.operand)}"
+        if isinstance(nodo, BinaryOperation):
+            return f"{resumir_expresion_ast(nodo.left)} {nodo.operator} {resumir_expresion_ast(nodo.right)}"
+        return str(nodo)
+
+    def actualizar_arbol_sintactico(ast_root: Program | None, errores_lista: list[str] | None = None):
+        if app_cerrando:
+            return
+        nodos_ui = [
+            crear_fila_arbol_sintactico(
+                "Programa", ft.Icons.ACCOUNT_TREE, 0, color="#55a8ff"
+            )
+        ]
+
+        if errores_lista:
+            nodos_ui.append(
+                crear_fila_arbol_sintactico(
+                    f"Errores detectados ({len(errores_lista)})",
+                    ft.Icons.ERROR_OUTLINE,
+                    1,
+                    color="#ff7c84",
+                )
+            )
+            for err in errores_lista[:15]:
+                nodos_ui.append(
+                    crear_fila_arbol_sintactico(
+                        err, ft.Icons.WARNING_AMBER, 2, color="#f0b45b"
+                    )
+                )
+
+        if ast_root and getattr(ast_root, "statements", None):
+            for stmt in ast_root.statements:
+                if isinstance(stmt, ModelDeclaration):
+                    nodos_ui.append(
+                        crear_fila_arbol_sintactico(
+                            "Modelo", ft.Icons.DATA_OBJECT, 1, color="#c084fc"
+                        )
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol_sintactico(
+                            stmt.name, ft.Icons.TABLE_CHART, 2, color="#55a8ff"
+                        )
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol_sintactico(
+                            "Atributos", ft.Icons.FOLDER, 3, color="#4ade80"
+                        )
+                    )
+                    for campo in stmt.fields:
+                        args_str = (
+                            f"({', '.join(map(str, campo.data_type.args))})"
+                            if campo.data_type.args
+                            else ""
+                        )
+                        tipo_str = f"{campo.data_type.type_name.capitalize()}{args_str}"
+                        restr_list = []
+                        for c in campo.constraints:
+                            if c.value is not None:
+                                restr_list.append(
+                                    f"{c.constraint_type.lower()}={resumir_expresion_ast(c.value)}"
+                                )
+                            else:
+                                restr_list.append(c.constraint_type.lower())
+                        restr_str = f" [{', '.join(restr_list)}]" if restr_list else ""
+                        nodos_ui.append(
+                            crear_fila_arbol_sintactico(
+                                f"{campo.name} : {tipo_str}{restr_str}",
+                                ft.Icons.CIRCLE,
+                                4,
+                                color="#57a9ff",
+                            )
+                        )
+                elif isinstance(stmt, DbOperation):
+                    cadena_resumen = ".".join(
+                        f"{call.method}({', '.join(resumir_expresion_ast(a) for a in (call.arguments or []))})"
+                        for call in stmt.calls
+                    )
+                    nodos_ui.append(
+                        crear_fila_arbol_sintactico(
+                            f"{stmt.model_name}.{cadena_resumen}",
+                            ft.Icons.DATA_OBJECT,
+                            1,
+                            color="#c084fc",
+                        )
+                    )
+                    for call in stmt.calls:
+                        args_txt = ", ".join(
+                            resumir_expresion_ast(a) for a in (call.arguments or [])
+                        )
+                        nodos_ui.append(
+                            crear_fila_arbol_sintactico(
+                                f".{call.method}({args_txt})",
+                                ft.Icons.SUBDIRECTORY_ARROW_RIGHT,
+                                2,
+                                color="#56d9e8",
+                            )
+                        )
+
+        syntax_tree.controls = nodos_ui
+        ajustar_ancho_arbol_sintactico(nodos_ui)
+        actualizar_control_seguro(syntax_tree)
+
+    def recolectar_contexto_modelos(codigo_editor_actual: str) -> list[ModelDeclaration]:
+        """
+        Recolecta los modelos declarados en el editor activo y en cualquier otra
+        pestaña abierta en `documents`, actualizando `session_symbol_table` para
+        que la Tabla de Símbolos persistente conserve todos los esquemas de la sesión.
+        """
+        modelos_por_nombre: dict[str, ModelDeclaration] = {}
+
+        # 1. Modelos de otras pestañas abiertas en la sesión
+        for doc in documents:
+            if doc is active_document:
+                continue
+            contenido_doc = doc.get("content") or ""
+            if contenido_doc.strip():
+                for m_node in extract_context_models(contenido_doc):
+                    modelos_por_nombre[m_node.name.lower()] = m_node
+                session_symbol_table.merge_from(
+                    build_context_symbol_table(contenido_doc),
+                    overwrite=True,
+                )
+
+        # 2. Modelos del editor activo (tienen prioridad si se redefinió algún modelo)
+        if codigo_editor_actual and codigo_editor_actual.strip():
+            for m_node in extract_context_models(codigo_editor_actual):
+                modelos_por_nombre[m_node.name.lower()] = m_node
+            session_symbol_table.merge_from(
+                build_context_symbol_table(codigo_editor_actual),
+                overwrite=True,
+            )
+
+        return list(modelos_por_nombre.values())
+
+    def preparar_fragmento_portapapeles(fragmento: str) -> str:
+        """
+        Normaliza un fragmento copiado al portapapeles:
+        - Convierte tabuladores en 4 espacios y normaliza saltos de línea.
+        - Si solo contiene operaciones DML, elimina los espacios iniciales de cada línea
+          para evitar tokens INDENT inesperados.
+        - Si contiene bloques `model`, aplica dedent y normaliza la sangría interna a 4 espacios.
+        """
+        return normalize_dsl_fragment(fragmento)
+
+    def ejecutar_pipeline_compilacion(
+        mostrar_en_consola: bool = True,
+        codigo_override: str | None = None,
+        usar_contexto_editor: bool = False,
+        etiqueta_origen: str | None = None,
+    ):
+        sincronizar_documento_activo()
+        codigo_editor_completo = editor.value or ""
+
+        if codigo_override is not None:
+            codigo_fuente = preparar_fragmento_portapapeles(codigo_override)
+            nombre_doc = etiqueta_origen or "Selección (Portapapeles)"
+            stem_doc = (
+                f"{active_path.stem}_seleccion"
+                if active_path is not None
+                else "seleccion_portapapeles"
+            )
+        else:
+            codigo_fuente = codigo_editor_completo
+            nombre_doc = (
+                active_path.name
+                if active_path is not None
+                else (active_document["name"] if active_document else "buffer.dsl")
+            )
+            stem_doc = (
+                active_path.stem
+                if active_path is not None
+                else Path(nombre_doc).stem
+            )
+
+        if not codigo_fuente.strip():
+            actualizar_arbol_sintactico(None, ["El código a compilar está vacío."])
+            if mostrar_en_consola:
+                escribir_en_consola("[!] No hay código DSL para compilar.")
+                establecer_estado("Código vacío", "#f0b45b")
+            return False, None, None
+
+        if not codigo_fuente.endswith("\n"):
+            codigo_fuente += "\n"
+
+        # Recolectar modelos de contexto del editor activo y documentos abiertos
+        modelos_contexto = recolectar_contexto_modelos(codigo_editor_completo)
+
+        # 1. Fase Léxica
+        errores_lexicos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(codigo_fuente)
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+
+        if errores_lexicos:
+            actualizar_arbol_sintactico(None, list(errores_lexicos))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    f"[Fase Léxica] Se encontraron {len(errores_lexicos)} errores léxicos:",
+                    *[f"  • {e}" for e in errores_lexicos],
+                    "[Fase Sintáctica] Omitida debido a errores léxicos previos.",
+                    "[Fase Semántica] Omitida debido a errores léxicos previos.",
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error léxico ({len(errores_lexicos)})", "#ff7c84")
+            return False, None, None
+
+        # 2. Fase Sintáctica
+        errores_sintacticos.clear()
+        token_iterator = iter(tokens)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ast_resultado = parser.parse(tokenfunc=lambda: next(token_iterator, None))
+
+        if errores_sintacticos:
+            actualizar_arbol_sintactico(ast_resultado, list(errores_sintacticos))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
+                    f"[Fase Sintáctica] Se encontraron {len(errores_sintacticos)} errores sintácticos:",
+                    *[f"  • {e}" for e in errores_sintacticos],
+                    "[Fase Semántica] Omitida debido a errores sintácticos previos.",
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error sintáctico ({len(errores_sintacticos)})", "#ff7c84")
+            return False, None, None
+
+        # 3. Fase Semántica (inyectando modelos del editor + tabla de símbolos persistente de sesión)
+        analizador_sem = SemanticAnalyzer()
+        with contextlib.redirect_stdout(io.StringIO()):
+            errores_sem, tabla_simbolos = analizador_sem.analyze(
+                ast_resultado,
+                context_models=modelos_contexto if usar_contexto_editor else None,
+                context_code=codigo_editor_completo if usar_contexto_editor else None,
+                persistent_symbols=session_symbol_table,
+            )
+
+        if tabla_simbolos and tabla_simbolos.models:
+            session_symbol_table.merge_from(tabla_simbolos, overwrite=True)
+
+        if errores_sem:
+            actualizar_arbol_sintactico(ast_resultado, list(errores_sem))
+            if mostrar_en_consola:
+                lineas = [
+                    "=" * 70,
+                    f"COMPILANDO: {nombre_doc}",
+                    "=" * 70,
+                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
+                    "[Fase Sintáctica] ÉXITO (0 errores sintácticos).",
+                    f"[Fase Semántica] Se encontraron {len(errores_sem)} errores semánticos:",
+                    *[f"  • {e}" for e in errores_sem],
+                    "=" * 70,
+                ]
+                escribir_en_consola("\n".join(lineas))
+                establecer_estado(f"Error semántico ({len(errores_sem)})", "#ff7c84")
+            return False, None, None
+
+        # 4. Fase de Generación de Código SQL (PostgreSQL)
+        # Filtrado estricto: solo se genera CREATE TABLE para modelos declarados explícitamente en ast_resultado
+        actualizar_arbol_sintactico(ast_resultado, None)
+        modelos_explicitos_ast = {
+            stmt.name.lower()
+            for stmt in (getattr(ast_resultado, "statements", None) or [])
+            if isinstance(stmt, ModelDeclaration)
+        }
+        generador = SQLCodeGenerator(tabla_simbolos)
+        sentencias_sql = generador.generate(
+            ast_resultado,
+            allowed_model_declarations=modelos_explicitos_ast if usar_contexto_editor else None,
+        )
+        script_sql = sentencias_sql.script
+
+        carpeta_sql = root_directory / "sql_generado"
+        carpeta_sql.mkdir(parents=True, exist_ok=True)
+        ruta_sql = carpeta_sql / f"{stem_doc}.sql"
+        try:
+            ruta_sql.write_text(script_sql + ("\n" if script_sql else ""), encoding="utf-8")
+        except OSError:
+            pass
+        dibujar_arbol_directorios()
+
+        if mostrar_en_consola:
+            total_modelos_ctx = len(tabla_simbolos.models)
+            info_ctx = (
+                f" (Contexto semántico: {total_modelos_ctx} modelo(s) en Tabla de Símbolos)"
+                if usar_contexto_editor and total_modelos_ctx
+                else ""
+            )
+            lineas = [
+                "=" * 70,
+                f"COMPILACIÓN EXITOSA: {nombre_doc}",
+                "=" * 70,
+                "[Fase Léxica] ÉXITO (0 errores).",
+                "[Fase Sintáctica] ÉXITO (0 errores).",
+                f"[Fase Semántica] ÉXITO (0 errores){info_ctx}.",
+                f"[Fase Generación SQL] {len(sentencias_sql)} sentencia(s) PostgreSQL generada(s).",
+                f"[Archivo guardado] {ruta_sql}",
+                "",
+                "--- Código SQL Generado (PostgreSQL) ---",
+            ]
+            for idx, stmt in enumerate(sentencias_sql, start=1):
+                lineas.append(f"\n-- [{idx}]")
+                lineas.append(stmt)
+            lineas.append("=" * 70)
+            escribir_en_consola("\n".join(lineas))
+            establecer_estado(
+                f"Compilado con éxito · {len(sentencias_sql)} sentencias SQL",
+                "#56d68b",
+            )
+
+        return True, sentencias_sql, ruta_sql
+
+    async def compilar_codigo(_=None):
+        ejecutar_pipeline_compilacion(mostrar_en_consola=True)
+        actualizar_pagina_seguro()
+
+    async def ejecutar_sentencias_en_postgres(sentencias_sql):
+        establecer_estado("Ejecutando SQL en PostgreSQL...", "#4da3ff")
+        executor = PostgresExecutor()
+        reporte = await asyncio.to_thread(
+            executor.execute_statements,
+            sentencias_sql,
+            None,
+            True,
+        )
+        escribir_en_consola(reporte.format_report())
+        if not reporte.connected:
+            establecer_estado("Error de conexión a PostgreSQL", "#ff7c84")
+        elif reporte.error_count > 0:
+            establecer_estado(
+                f"Ejecutado con {reporte.error_count} error(es) en PostgreSQL",
+                "#f0b45b",
+            )
+        else:
+            establecer_estado(
+                f"Ejecución PostgreSQL exitosa · {reporte.success_count} sentencias OK",
+                "#56d68b",
+            )
+        actualizar_pagina_seguro()
+
+    async def compilar_y_ejecutar_codigo(_=None):
+        exito, sentencias_sql, _ = ejecutar_pipeline_compilacion(mostrar_en_consola=True)
+        if not exito or sentencias_sql is None:
+            actualizar_pagina_seguro()
+            return
+        await ejecutar_sentencias_en_postgres(sentencias_sql)
+
+    async def obtener_texto_portapapeles() -> str:
+        texto = leer_portapapeles_sistema()
+        if texto and texto.strip():
+            return texto
+        try:
+            clip_flet = await asyncio.wait_for(terminal_clipboard.get(), timeout=0.6)
+            if isinstance(clip_flet, str) and clip_flet.strip():
+                return clip_flet
+        except Exception:
+            pass
+        return ""
+
+    async def compilar_seleccion_portapapeles(_=None):
+        fragmento = await obtener_texto_portapapeles()
+        if not fragmento or not fragmento.strip():
+            escribir_en_consola(
+                "[!] El portapapeles está vacío. Selecciona el fragmento en el editor, "
+                "presiona Ctrl+C y vuelve a intentarlo."
+            )
+            establecer_estado("Portapapeles vacío (usa Ctrl+C primero)", "#f0b45b")
+            return
+        ejecutar_pipeline_compilacion(
+            mostrar_en_consola=True,
+            codigo_override=fragmento,
+            usar_contexto_editor=True,
+            etiqueta_origen="Selección (Portapapeles)",
+        )
+        actualizar_pagina_seguro()
+
+    async def compilar_y_ejecutar_seleccion_portapapeles(_=None):
+        fragmento = await obtener_texto_portapapeles()
+        if not fragmento or not fragmento.strip():
+            escribir_en_consola(
+                "[!] El portapapeles está vacío. Selecciona el fragmento en el editor, "
+                "presiona Ctrl+C y vuelve a intentarlo."
+            )
+            establecer_estado("Portapapeles vacío (usa Ctrl+C primero)", "#f0b45b")
+            return
+        exito, sentencias_sql, _ = ejecutar_pipeline_compilacion(
+            mostrar_en_consola=True,
+            codigo_override=fragmento,
+            usar_contexto_editor=True,
+            etiqueta_origen="Selección (Portapapeles)",
+        )
+        if not exito or sentencias_sql is None:
+            actualizar_pagina_seguro()
+            return
+        await ejecutar_sentencias_en_postgres(sentencias_sql)
+
+    def abrir_menu_contextual_editor(event=None):
+        mostrar_menu_contextual_flotante(
+            event,
+            items=[
+                crear_item_menu_contextual(
+                    "Compilar selección (Portapapeles)",
+                    ft.Icons.PLAY_ARROW,
+                    compilar_seleccion_portapapeles,
+                    color_icono=ACCENT,
+                ),
+                crear_item_menu_contextual(
+                    "Compilar y ejecutar selección",
+                    ft.Icons.ROCKET_LAUNCH,
+                    compilar_y_ejecutar_seleccion_portapapeles,
+                    color_icono="#e98222",
+                ),
+                ft.Divider(height=5, thickness=1, color=BORDER),
+                crear_item_menu_contextual(
+                    "Buscar en el archivo",
+                    ft.Icons.SEARCH,
+                    abrir_busqueda,
+                    atajo="Ctrl+F",
+                    color_icono=BLUE,
+                ),
+            ],
+            width=290,
+        )
+
+    # =====================================================================
+    # 4.3 CONFIGURACIÓN DE POSTGRESQL CON CHECKBOXES OMITIR DDL Y OMITIR ALTER
+    # =====================================================================
+
+    def abrir_configuracion_bd(_=None):
+        cfg = load_db_config()
+        host_field = ft.TextField(
+            label="Host",
+            value=str(cfg.get("host", "localhost")),
+            height=44,
+            text_size=13,
+            border=crear_borde_campo(BORDER, ACCENT),
+        )
+        port_field = ft.TextField(
+            label="Puerto",
+            value=str(cfg.get("port", 5432)),
+            height=44,
+            text_size=13,
+            border=crear_borde_campo(BORDER, ACCENT),
+        )
+        user_field = ft.TextField(
+            label="Usuario",
+            value=str(cfg.get("user", "postgres")),
+            height=44,
+            text_size=13,
+            border=crear_borde_campo(BORDER, ACCENT),
+        )
+        pass_field = ft.TextField(
+            label="Contraseña",
+            value=str(cfg.get("password", "postgres")),
+            password=True,
+            can_reveal_password=True,
+            height=44,
+            text_size=13,
+            border=crear_borde_campo(BORDER, ACCENT),
+        )
+        db_field = ft.TextField(
+            label="Base de datos",
+            value=str(cfg.get("dbname", "compiladorsql_db")),
+            height=44,
+            text_size=13,
+            border=crear_borde_campo(BORDER, ACCENT),
+        )
+        reset_check = ft.Checkbox(
+            label="Reiniciar tablas del script antes de ejecutar (DROP CASCADE)",
+            value=bool(cfg.get("reset_tables", True)),
+        )
+
+        omit_ddl_inicial = bool(cfg.get("omit_ddl", False))
+        omit_alter_inicial = bool(cfg.get("omit_alter", True))
+
+        omit_ddl_check = ft.Checkbox(
+            label="Omitir DDL",
+            value=omit_ddl_inicial,
+            tooltip="Omite sentencias de definición de datos (CREATE, DROP, TRUNCATE) al ejecutar en PostgreSQL",
+        )
+        omit_alter_check = ft.Checkbox(
+            label="Omitir ALTER",
+            value=omit_alter_inicial if omit_ddl_inicial else True,
+            disabled=not omit_ddl_inicial,
+            tooltip="Si se desmarca, permite ejecutar sentencias ALTER aunque 'Omitir DDL' esté activo",
+        )
+
+        def al_cambiar_omit_ddl(_):
+            if omit_ddl_check.value:
+                omit_alter_check.disabled = False
+                omit_alter_check.value = True
+            else:
+                omit_alter_check.disabled = True
+            actualizar_control_seguro(omit_alter_check)
+
+        omit_ddl_check.on_change = al_cambiar_omit_ddl
+
+        feedback_text = ft.Text("", size=12, color=MUTED)
+
+        async def probar_conexion_click(_):
+            feedback_text.value = "Probando conexión..."
+            feedback_text.color = "#4da3ff"
+            actualizar_pagina_seguro()
+            try:
+                puerto_val = int(port_field.value or 5432)
+            except ValueError:
+                puerto_val = 5432
+            exec_test = PostgresExecutor(
+                host=host_field.value or "localhost",
+                port=puerto_val,
+                user=user_field.value or "postgres",
+                password=pass_field.value or "",
+                dbname=db_field.value or "compiladorsql_db",
+            )
+            ok, msg = await asyncio.to_thread(exec_test.test_connection, True)
+            feedback_text.value = msg
+            feedback_text.color = "#56d68b" if ok else "#ff7c84"
+            actualizar_pagina_seguro()
+
+        def guardar_cfg_click(_):
+            try:
+                puerto_val = int(port_field.value or 5432)
+            except ValueError:
+                puerto_val = 5432
+            nueva_cfg = {
+                "host": (host_field.value or "localhost").strip(),
+                "port": puerto_val,
+                "user": (user_field.value or "postgres").strip(),
+                "password": pass_field.value or "",
+                "dbname": (db_field.value or "compiladorsql_db").strip(),
+                "reset_tables": bool(reset_check.value),
+                "omit_ddl": bool(omit_ddl_check.value),
+                "omit_alter": bool(omit_alter_check.value),
+            }
+            ruta_cfg = save_db_config(nueva_cfg)
+            page.pop_dialog()
+            establecer_estado(f"Configuración PostgreSQL guardada ({ruta_cfg.name})", "#56d68b")
+
+        def cerrar_cfg_click(_):
+            page.pop_dialog()
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Configuración de Conexión PostgreSQL", size=16, weight=ft.FontWeight.W_700),
+                content=ft.Container(
+                    content=ft.Column(
+                        [
+                            host_field,
+                            port_field,
+                            user_field,
+                            pass_field,
+                            db_field,
+                            reset_check,
+                            ft.Row(
+                                [omit_ddl_check, omit_alter_check],
+                                spacing=18,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            feedback_text,
+                        ],
+                        tight=True,
+                        spacing=10,
+                    ),
+                    width=430,
+                ),
+                actions=[
+                    ft.TextButton("Probar conexión", on_click=probar_conexion_click),
+                    ft.TextButton("Cancelar", on_click=cerrar_cfg_click),
+                    ft.FilledButton("Guardar", on_click=guardar_cfg_click),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
         )
 
     explorer_panel = ft.Container(
@@ -1660,6 +3302,38 @@ def iniciar_interfaz(page: ft.Page):
         border_radius=5,
     )
 
+    editor_gesture_area = ft.GestureDetector(
+        content=editor_scroll,
+        on_secondary_tap_down=abrir_menu_contextual_editor,
+        expand=True,
+    )
+
+    editor_options_menu = configurar_sin_foco(
+        ft.PopupMenuButton(
+            icon=ft.Icons.MORE_HORIZ,
+            icon_color=MUTED,
+            tooltip="Opciones del editor",
+            items=[
+                ft.PopupMenuItem(
+                    content="Compilar selección (Portapapeles)",
+                    icon=ft.Icons.PLAY_ARROW,
+                    on_click=compilar_seleccion_portapapeles,
+                ),
+                ft.PopupMenuItem(
+                    content="Compilar y ejecutar selección (Portapapeles)",
+                    icon=ft.Icons.ROCKET_LAUNCH,
+                    on_click=compilar_y_ejecutar_seleccion_portapapeles,
+                ),
+                ft.PopupMenuItem(),
+                ft.PopupMenuItem(
+                    content="Buscar texto  Ctrl+F",
+                    icon=ft.Icons.SEARCH,
+                    on_click=abrir_busqueda,
+                ),
+            ],
+        )
+    )
+
     editor_panel = ft.Container(
         content=ft.Column(
             [
@@ -1667,18 +3341,7 @@ def iniciar_interfaz(page: ft.Page):
                     content=ft.Row(
                         [
                             tabs_bar,
-                            ft.PopupMenuButton(
-                                icon=ft.Icons.MORE_HORIZ,
-                                icon_color=MUTED,
-                                tooltip="Opciones del editor",
-                                items=[
-                                    ft.PopupMenuItem(
-                                        content="Buscar texto  Ctrl+F",
-                                        icon=ft.Icons.SEARCH,
-                                        on_click=abrir_busqueda,
-                                    )
-                                ],
-                            ),
+                            editor_options_menu,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1688,14 +3351,16 @@ def iniciar_interfaz(page: ft.Page):
                     height=39,
                 ),
                 search_bar,
-                editor_scroll,
+                editor_gesture_area,
                 ft.Container(
                     content=ft.Row(
                         [
                             language_label,
                             ft.Text("UTF-8", size=11, color=MUTED),
+                            ft.Text("│", size=11, color=MUTED),
+                            ft.Text("Indentación: 4 espacios ('>>' o Tab)", size=11, color=MUTED),
                         ],
-                        spacing=15,
+                        spacing=12,
                     ),
                     padding=ft.Padding.only(left=12, top=5, bottom=5),
                     bgcolor="#151e2b",
@@ -1832,13 +3497,16 @@ def iniciar_interfaz(page: ft.Page):
 
     terminal_divider = ft.GestureDetector(
         content=ft.Container(
-            content=ft.Container(
-                height=2,
-                bgcolor=BORDER,
-                border_radius=2,
-                width=64,
+            content=ft.Row(
+                [
+                    terminal_divider_bar,
+                    terminal_divider_label,
+                ],
+                spacing=8,
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            height=8,
+            height=12,
             alignment=ft.Alignment.CENTER,
         ),
         mouse_cursor=ft.MouseCursor.RESIZE_UP_DOWN,
@@ -1846,391 +3514,6 @@ def iniciar_interfaz(page: ft.Page):
         on_vertical_drag_update=redimensionar_terminal,
         on_vertical_drag_end=finalizar_redimension_terminal,
     )
-
-    def escribir_en_consola(texto: str):
-        normalizado = texto.replace("\r\n", "\n").replace("\n", "\r\n")
-        terminal_stream.feed(f"\r\n{normalizado}\r\n")
-        dibujar_terminal()
-
-    def resumir_expresion_ast(nodo) -> str:
-        if nodo is None:
-            return ""
-        if isinstance(nodo, Literal):
-            if nodo.literal_type.upper() == "STRING_LITERAL":
-                return f'"{nodo.value}"'
-            return str(nodo.value)
-        if isinstance(nodo, Identifier):
-            return nodo.name
-        if isinstance(nodo, Parameter):
-            return f"{nodo.name} = {resumir_expresion_ast(nodo.value)}"
-        if isinstance(nodo, UnaryOperation):
-            op = f"{nodo.operator} " if nodo.operator.upper() == "NOT" else nodo.operator
-            return f"{op}{resumir_expresion_ast(nodo.operand)}"
-        if isinstance(nodo, BinaryOperation):
-            return f"{resumir_expresion_ast(nodo.left)} {nodo.operator} {resumir_expresion_ast(nodo.right)}"
-        return str(nodo)
-
-    def actualizar_arbol_sintactico(ast_root: Program | None, errores_lista: list[str] | None = None):
-        nodos_ui = [
-            crear_fila_arbol_sintactico(
-                "Programa", ft.Icons.ACCOUNT_TREE, 0, color="#55a8ff"
-            )
-        ]
-
-        if errores_lista:
-            nodos_ui.append(
-                crear_fila_arbol_sintactico(
-                    f"Errores detectados ({len(errores_lista)})",
-                    ft.Icons.ERROR_OUTLINE,
-                    1,
-                    color="#ff7c84",
-                )
-            )
-            for err in errores_lista[:15]:
-                nodos_ui.append(
-                    crear_fila_arbol_sintactico(
-                        err, ft.Icons.WARNING_AMBER, 2, color="#f0b45b"
-                    )
-                )
-
-        if ast_root and getattr(ast_root, "statements", None):
-            for stmt in ast_root.statements:
-                if isinstance(stmt, ModelDeclaration):
-                    nodos_ui.append(
-                        crear_fila_arbol_sintactico(
-                            "Modelo", ft.Icons.DATA_OBJECT, 1, color="#c084fc"
-                        )
-                    )
-                    nodos_ui.append(
-                        crear_fila_arbol_sintactico(
-                            stmt.name, ft.Icons.TABLE_CHART, 2, color="#55a8ff"
-                        )
-                    )
-                    nodos_ui.append(
-                        crear_fila_arbol_sintactico(
-                            "Atributos", ft.Icons.FOLDER, 3, color="#4ade80"
-                        )
-                    )
-                    for campo in stmt.fields:
-                        args_str = (
-                            f"({', '.join(map(str, campo.data_type.args))})"
-                            if campo.data_type.args
-                            else ""
-                        )
-                        tipo_str = f"{campo.data_type.type_name.capitalize()}{args_str}"
-                        restr_list = []
-                        for c in campo.constraints:
-                            if c.value is not None:
-                                restr_list.append(
-                                    f"{c.constraint_type.lower()}={resumir_expresion_ast(c.value)}"
-                                )
-                            else:
-                                restr_list.append(c.constraint_type.lower())
-                        restr_str = f" [{', '.join(restr_list)}]" if restr_list else ""
-                        nodos_ui.append(
-                            crear_fila_arbol_sintactico(
-                                f"{campo.name} : {tipo_str}{restr_str}",
-                                ft.Icons.CIRCLE,
-                                4,
-                                color="#57a9ff",
-                            )
-                        )
-                elif isinstance(stmt, DbOperation):
-                    cadena_resumen = ".".join(
-                        f"{call.method}({', '.join(resumir_expresion_ast(a) for a in (call.arguments or []))})"
-                        for call in stmt.calls
-                    )
-                    nodos_ui.append(
-                        crear_fila_arbol_sintactico(
-                            f"{stmt.model_name}.{cadena_resumen}",
-                            ft.Icons.DATA_OBJECT,
-                            1,
-                            color="#c084fc",
-                        )
-                    )
-                    for call in stmt.calls:
-                        args_txt = ", ".join(
-                            resumir_expresion_ast(a) for a in (call.arguments or [])
-                        )
-                        nodos_ui.append(
-                            crear_fila_arbol_sintactico(
-                                f".{call.method}({args_txt})",
-                                ft.Icons.SUBDIRECTORY_ARROW_RIGHT,
-                                2,
-                                color="#56d9e8",
-                            )
-                        )
-
-        syntax_tree.controls = nodos_ui
-        ajustar_ancho_arbol_sintactico(nodos_ui)
-        try:
-            syntax_tree.update()
-        except Exception:
-            pass
-
-    def ejecutar_pipeline_compilacion(mostrar_en_consola: bool = True):
-        sincronizar_documento_activo()
-        codigo_fuente = editor.value or ""
-        nombre_doc = (
-            active_path.name
-            if active_path is not None
-            else (active_document["name"] if active_document else "buffer.dsl")
-        )
-        stem_doc = (
-            active_path.stem
-            if active_path is not None
-            else Path(nombre_doc).stem
-        )
-
-        if not codigo_fuente.strip():
-            actualizar_arbol_sintactico(None, ["El archivo está vacío."])
-            if mostrar_en_consola:
-                escribir_en_consola("[!] El editor está vacío. Escribe o abre un archivo DSL para compilar.")
-                establecer_estado("Editor vacío", "#f0b45b")
-            return False, None, None
-
-        if not codigo_fuente.endswith("\n"):
-            codigo_fuente += "\n"
-
-        # 1. Fase Léxica
-        errores_lexicos.clear()
-        with contextlib.redirect_stdout(io.StringIO()):
-            lexer.input(codigo_fuente)
-            tokens = []
-            while True:
-                tok = lexer.token()
-                if tok is None:
-                    break
-                tokens.append(tok)
-
-        if errores_lexicos:
-            actualizar_arbol_sintactico(None, list(errores_lexicos))
-            if mostrar_en_consola:
-                lineas = [
-                    "=" * 70,
-                    f"COMPILANDO: {nombre_doc}",
-                    "=" * 70,
-                    f"[Fase Léxica] Se encontraron {len(errores_lexicos)} errores léxicos:",
-                    *[f"  • {e}" for e in errores_lexicos],
-                    "[Fase Sintáctica] Omitida debido a errores léxicos previos.",
-                    "[Fase Semántica] Omitida debido a errores léxicos previos.",
-                    "=" * 70,
-                ]
-                escribir_en_consola("\n".join(lineas))
-                establecer_estado(f"Error léxico ({len(errores_lexicos)})", "#ff7c84")
-            return False, None, None
-
-        # 2. Fase Sintáctica
-        errores_sintacticos.clear()
-        token_iterator = iter(tokens)
-        with contextlib.redirect_stdout(io.StringIO()):
-            ast_resultado = parser.parse(tokenfunc=lambda: next(token_iterator, None))
-
-        if errores_sintacticos:
-            actualizar_arbol_sintactico(ast_resultado, list(errores_sintacticos))
-            if mostrar_en_consola:
-                lineas = [
-                    "=" * 70,
-                    f"COMPILANDO: {nombre_doc}",
-                    "=" * 70,
-                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
-                    f"[Fase Sintáctica] Se encontraron {len(errores_sintacticos)} errores sintácticos:",
-                    *[f"  • {e}" for e in errores_sintacticos],
-                    "[Fase Semántica] Omitida debido a errores sintácticos previos.",
-                    "=" * 70,
-                ]
-                escribir_en_consola("\n".join(lineas))
-                establecer_estado(f"Error sintáctico ({len(errores_sintacticos)})", "#ff7c84")
-            return False, None, None
-
-        # 3. Fase Semántica
-        analizador_sem = SemanticAnalyzer()
-        with contextlib.redirect_stdout(io.StringIO()):
-            errores_sem, tabla_simbolos = analizador_sem.analyze(ast_resultado)
-
-        if errores_sem:
-            actualizar_arbol_sintactico(ast_resultado, list(errores_sem))
-            if mostrar_en_consola:
-                lineas = [
-                    "=" * 70,
-                    f"COMPILANDO: {nombre_doc}",
-                    "=" * 70,
-                    "[Fase Léxica] ÉXITO (0 errores léxicos).",
-                    "[Fase Sintáctica] ÉXITO (0 errores sintácticos).",
-                    f"[Fase Semántica] Se encontraron {len(errores_sem)} errores semánticos:",
-                    *[f"  • {e}" for e in errores_sem],
-                    "=" * 70,
-                ]
-                escribir_en_consola("\n".join(lineas))
-                establecer_estado(f"Error semántico ({len(errores_sem)})", "#ff7c84")
-            return False, None, None
-
-        # 4. Fase de Generación de Código SQL (PostgreSQL)
-        actualizar_arbol_sintactico(ast_resultado, None)
-        generador = SQLCodeGenerator(tabla_simbolos)
-        sentencias_sql = generador.generate(ast_resultado)
-        script_sql = sentencias_sql.script
-
-        carpeta_sql = root_directory / "sql_generado"
-        carpeta_sql.mkdir(parents=True, exist_ok=True)
-        ruta_sql = carpeta_sql / f"{stem_doc}.sql"
-        try:
-            ruta_sql.write_text(script_sql + ("\n" if script_sql else ""), encoding="utf-8")
-        except OSError:
-            pass
-        dibujar_arbol_directorios()
-
-        if mostrar_en_consola:
-            lineas = [
-                "=" * 70,
-                f"COMPILACIÓN EXITOSA: {nombre_doc}",
-                "=" * 70,
-                "[Fase Léxica] ÉXITO (0 errores).",
-                "[Fase Sintáctica] ÉXITO (0 errores).",
-                "[Fase Semántica] ÉXITO (0 errores).",
-                f"[Fase Generación SQL] {len(sentencias_sql)} sentencia(s) PostgreSQL generada(s).",
-                f"[Archivo guardado] {ruta_sql}",
-                "",
-                "--- Código SQL Generado (PostgreSQL) ---",
-            ]
-            for idx, stmt in enumerate(sentencias_sql, start=1):
-                lineas.append(f"\n-- [{idx}]")
-                lineas.append(stmt)
-            lineas.append("=" * 70)
-            escribir_en_consola("\n".join(lineas))
-            establecer_estado(
-                f"Compilado con éxito · {len(sentencias_sql)} sentencias SQL",
-                "#56d68b",
-            )
-
-        return True, sentencias_sql, ruta_sql
-
-    async def compilar_codigo(_=None):
-        ejecutar_pipeline_compilacion(mostrar_en_consola=True)
-        page.update()
-
-    async def compilar_y_ejecutar_codigo(_=None):
-        exito, sentencias_sql, _ = ejecutar_pipeline_compilacion(mostrar_en_consola=True)
-        if not exito or not sentencias_sql:
-            page.update()
-            return
-
-        establecer_estado("Ejecutando SQL en PostgreSQL...", "#4da3ff")
-        executor = PostgresExecutor()
-        reporte = await asyncio.to_thread(
-            executor.execute_statements,
-            sentencias_sql,
-            None,
-            True,
-        )
-        escribir_en_consola(reporte.format_report())
-        if not reporte.connected:
-            establecer_estado("Error de conexión a PostgreSQL", "#ff7c84")
-        elif reporte.error_count > 0:
-            establecer_estado(
-                f"Ejecutado con {reporte.error_count} error(es) en PostgreSQL",
-                "#f0b45b",
-            )
-        else:
-            establecer_estado(
-                f"Ejecución PostgreSQL exitosa · {reporte.success_count} sentencias OK",
-                "#56d68b",
-            )
-        page.update()
-
-    def abrir_configuracion_bd(_=None):
-        cfg = load_db_config()
-        host_field = ft.TextField(label="Host", value=str(cfg.get("host", "localhost")), height=44, text_size=13)
-        port_field = ft.TextField(label="Puerto", value=str(cfg.get("port", 5432)), height=44, text_size=13)
-        user_field = ft.TextField(label="Usuario", value=str(cfg.get("user", "postgres")), height=44, text_size=13)
-        pass_field = ft.TextField(
-            label="Contraseña",
-            value=str(cfg.get("password", "postgres")),
-            password=True,
-            can_reveal_password=True,
-            height=44,
-            text_size=13,
-        )
-        db_field = ft.TextField(
-            label="Base de datos",
-            value=str(cfg.get("dbname", "compiladorsql_db")),
-            height=44,
-            text_size=13,
-        )
-        reset_check = ft.Checkbox(
-            label="Reiniciar tablas del script antes de ejecutar (DROP CASCADE)",
-            value=bool(cfg.get("reset_tables", True)),
-        )
-        feedback_text = ft.Text("", size=12, color=MUTED)
-
-        async def probar_conexion_click(_):
-            feedback_text.value = "Probando conexión..."
-            feedback_text.color = "#4da3ff"
-            page.update()
-            try:
-                puerto_val = int(port_field.value or 5432)
-            except ValueError:
-                puerto_val = 5432
-            exec_test = PostgresExecutor(
-                host=host_field.value or "localhost",
-                port=puerto_val,
-                user=user_field.value or "postgres",
-                password=pass_field.value or "",
-                dbname=db_field.value or "compiladorsql_db",
-            )
-            ok, msg = await asyncio.to_thread(exec_test.test_connection, True)
-            feedback_text.value = msg
-            feedback_text.color = "#56d68b" if ok else "#ff7c84"
-            page.update()
-
-        def guardar_cfg_click(_):
-            try:
-                puerto_val = int(port_field.value or 5432)
-            except ValueError:
-                puerto_val = 5432
-            nueva_cfg = {
-                "host": (host_field.value or "localhost").strip(),
-                "port": puerto_val,
-                "user": (user_field.value or "postgres").strip(),
-                "password": pass_field.value or "",
-                "dbname": (db_field.value or "compiladorsql_db").strip(),
-                "reset_tables": bool(reset_check.value),
-            }
-            ruta_cfg = save_db_config(nueva_cfg)
-            page.pop_dialog()
-            establecer_estado(f"Configuración PostgreSQL guardada ({ruta_cfg.name})", "#56d68b")
-
-        def cerrar_cfg_click(_):
-            page.pop_dialog()
-
-        page.show_dialog(
-            ft.AlertDialog(
-                modal=True,
-                title=ft.Text("Configuración de Conexión PostgreSQL", size=16, weight=ft.FontWeight.W_700),
-                content=ft.Container(
-                    content=ft.Column(
-                        [
-                            host_field,
-                            port_field,
-                            user_field,
-                            pass_field,
-                            db_field,
-                            reset_check,
-                            feedback_text,
-                        ],
-                        tight=True,
-                        spacing=10,
-                    ),
-                    width=420,
-                ),
-                actions=[
-                    ft.TextButton("Probar conexión", on_click=probar_conexion_click),
-                    ft.TextButton("Cancelar", on_click=cerrar_cfg_click),
-                    ft.FilledButton("Guardar", on_click=guardar_cfg_click),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            )
-        )
 
     toolbar = ft.Container(
         content=ft.Row(
@@ -2333,7 +3616,7 @@ def iniciar_interfaz(page: ft.Page):
         ejecutar_pipeline_compilacion(mostrar_en_consola=False)
     else:
         actualizar_metadatos_editor()
-    page.update()
+    actualizar_pagina_seguro()
     page.run_task(iniciar_powershell)
 
 
