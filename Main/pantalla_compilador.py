@@ -248,16 +248,20 @@ def iniciar_interfaz(page: ft.Page):
     terminal_height = 250
     pending_drag_height = 250.0
     terminal_is_resizing = False
-    last_terminal_drag_update = 0.0
+    terminal_diagnostic_document_id: int | None = None
+    terminal_diagnostic_targets: dict[str, tuple[int, int, int]] = {}
     workspace_height = 0
     terminal_has_focus = True
     terminal_refocus_pending = False
     rendered_history_count = -1
     rendered_history_ids: tuple[int, ...] = ()
     terminal_row_controls: list[ft.Text] = []
+    terminal_app_output_lines: list[tuple[object, str]] = []
+    terminal_app_output_controls: list[ft.Text] = []
+    terminal_app_output_anchors: list[object] = []
+    terminal_app_output_dirty = False
     terminal_selections: dict[int, str] = {}
     terminal_resize_handle: asyncio.TimerHandle | None = None
-    terminal_panel_update_handle: asyncio.TimerHandle | None = None
     pending_terminal_size: tuple[int, int, float] | None = None
     editor_scroll_offset = 0.0
     editor_viewport_height = 0.0
@@ -326,14 +330,6 @@ def iniciar_interfaz(page: ft.Page):
         size=12,
         color=MUTED,
         font_family="Segoe UI",
-    )
-    terminal_prompt_label = ft.Text(
-        f"PS {root_directory}>",
-        size=10,
-        color=MUTED,
-        font_family="Consolas",
-        max_lines=1,
-        overflow=ft.TextOverflow.ELLIPSIS,
     )
     tabs_bar = ft.Row(
         controls=[],
@@ -503,11 +499,11 @@ def iniciar_interfaz(page: ft.Page):
         key="terminal-output",
         spacing=0,
         scroll=ft.ScrollMode.AUTO,
-        auto_scroll=False,
+        auto_scroll=True,
+        auto_scroll_animation=0,
         expand=True,
         build_controls_on_demand=True,
         item_extent=18,
-        reverse=True,
         width=terminal_content_width,
     )
     explorer_body = ft.Column(
@@ -673,6 +669,43 @@ def iniciar_interfaz(page: ft.Page):
                 )
         except RuntimeError:
             pass
+
+    async def ir_a_posicion_error(
+        line: int,
+        column: int,
+        document_id: int | None,
+    ):
+        if app_cerrando or document_id is None:
+            return
+        document = next(
+            (item for item in documents if item["id"] == document_id),
+            None,
+        )
+        if document is None:
+            return
+        if active_document is not document:
+            activar_documento(document_id)
+
+        contents = editor.value or ""
+        offset = 0
+        for _ in range(max(0, line - 1)):
+            newline = contents.find("\n", offset)
+            if newline < 0:
+                offset = len(contents)
+                break
+            offset = newline + 1
+        line_end = contents.find("\n", offset)
+        if line_end < 0:
+            line_end = len(contents)
+        offset = min(offset + max(0, column - 1), line_end)
+        editor.selection = ft.TextSelection(offset, offset)
+        actualizar_posicion_cursor(editor.selection)
+        try:
+            await editor.focus()
+            await revelar_posicion_editor(offset)
+        except RuntimeError:
+            return
+        actualizar_pagina_seguro(editor, cursor_position_label)
 
     async def al_cambiar_seleccion_editor(event):
         if app_cerrando:
@@ -996,8 +1029,69 @@ def iniciar_interfaz(page: ft.Page):
         *,
         key: str | None = None,
     ):
+        row_text = "".join(
+            row[x].data for x in range(max(row, default=-1) + 1)
+        ).rstrip()
+        link_match = re.search(r"(\[[^\]\r\n]+:\d+(?::\d+)?\])", row_text)
+        diagnostic_link = link_match.group(1) if link_match else None
+        document_id = (
+            terminal_diagnostic_targets.get(diagnostic_link)
+            if diagnostic_link
+            else None
+        )
+
+        def abrir_diagnostico(_=None):
+            if app_cerrando or document_id is None:
+                return
+            try:
+                page.run_task(
+                    ir_a_posicion_error,
+                    *document_id,
+                )
+            except RuntimeError:
+                return
+
+        spans = dibujar_linea_terminal(row, cursor_x)
+        if link_match and document_id is not None:
+            link_start, link_end = link_match.span()
+            span_offset = 0
+            linked_spans = []
+            for span in spans:
+                span_text = span.text or ""
+                span_end = span_offset + len(span_text)
+                overlap_start = max(link_start, span_offset)
+                overlap_end = min(link_end, span_end)
+                if overlap_start >= overlap_end:
+                    linked_spans.append(span)
+                else:
+                    prefix = span_text[: overlap_start - span_offset]
+                    link_text = span_text[
+                        overlap_start - span_offset : overlap_end - span_offset
+                    ]
+                    suffix = span_text[overlap_end - span_offset :]
+                    if prefix:
+                        linked_spans.append(
+                            ft.TextSpan(text=prefix, style=span.style)
+                        )
+                    linked_spans.append(
+                        ft.TextSpan(
+                            text=link_text,
+                            style=ft.TextStyle(
+                                color=BLUE,
+                                decoration=ft.TextDecoration.UNDERLINE,
+                            ),
+                            on_click=abrir_diagnostico,
+                        )
+                    )
+                    if suffix:
+                        linked_spans.append(
+                            ft.TextSpan(text=suffix, style=span.style)
+                        )
+                span_offset = span_end
+            spans = linked_spans
+
         return ft.Text(
-            spans=dibujar_linea_terminal(row, cursor_x),
+            spans=spans,
             size=13,
             font_family="Consolas",
             color="#d5deeb",
@@ -1007,7 +1101,8 @@ def iniciar_interfaz(page: ft.Page):
             max_lines=1,
             width=terminal_content_width,
             key=key,
-            on_tap=enfocar_terminal,
+            tooltip=diagnostic_link,
+            on_tap=enfocar_terminal if diagnostic_link is None else None,
             on_selection_change=al_cambiar_seleccion_terminal,
         )
 
@@ -1024,13 +1119,40 @@ def iniciar_interfaz(page: ft.Page):
             )
             for y in range(terminal_screen.lines)
         )
-        current_control_ids = {id(control) for control in terminal_row_controls}
+        current_control_ids = {
+            id(control)
+            for control in (*terminal_row_controls, *terminal_app_output_controls)
+        }
         for control_id in terminal_selections.keys() - current_control_ids:
             del terminal_selections[control_id]
+
+    def reconstruir_salida_app_terminal():
+        terminal_app_output_controls.clear()
+        terminal_app_output_anchors.clear()
+        width = max(1, terminal_columns)
+        for index, (anchor, line) in enumerate(terminal_app_output_lines):
+            wrapped_lines = textwrap.wrap(
+                line,
+                width=width,
+                replace_whitespace=False,
+                drop_whitespace=False,
+            ) or [""]
+            for part_index, wrapped_line in enumerate(wrapped_lines):
+                row = pyte.screens.StaticDefaultDict(terminal_screen.default_char)
+                for x, character in enumerate(wrapped_line[:width]):
+                    row[x] = terminal_screen.default_char._replace(data=character)
+                terminal_app_output_controls.append(
+                    crear_linea_terminal(
+                        row,
+                        key=f"terminal-app-{index}-{part_index}",
+                    )
+                )
+                terminal_app_output_anchors.append(anchor)
 
     def dibujar_terminal():
         nonlocal rendered_history_count, rendered_history_ids
         nonlocal terminal_refocus_pending
+        nonlocal terminal_app_output_dirty
         if app_cerrando:
             return
         history_rows = list(terminal_screen.history.top)
@@ -1098,7 +1220,10 @@ def iniciar_interfaz(page: ft.Page):
             rebuild = True
             reconstruir_filas_terminal(history_rows)
 
-        current_control_ids = {id(control) for control in terminal_row_controls}
+        current_control_ids = {
+            id(control)
+            for control in (*terminal_row_controls, *terminal_app_output_controls)
+        }
         for control_id in terminal_selections.keys() - current_control_ids:
             del terminal_selections[control_id]
 
@@ -1117,17 +1242,37 @@ def iniciar_interfaz(page: ft.Page):
         rendered_history_count = history_count
         rendered_history_ids = history_ids
 
-        if rebuild or history_ids != previous_history_ids or changed_rows:
-            prompt_row = terminal_screen.buffer[terminal_screen.cursor.y]
-            prompt_line = "".join(
-                prompt_row[x].data for x in range(terminal_screen.cursor.x)
+        if terminal_app_output_dirty:
+            reconstruir_salida_app_terminal()
+
+        if (
+            rebuild
+            or history_ids != previous_history_ids
+            or changed_rows
+            or terminal_app_output_dirty
+        ):
+            display_rows = [
+                *history_rows,
+                *(terminal_screen.buffer[y] for y in range(terminal_screen.lines)),
+            ]
+            row_indexes = {id(row): index for index, row in enumerate(display_rows)}
+            cursor_index = min(
+                history_count + terminal_screen.cursor.y,
+                len(terminal_row_controls),
             )
-            prompt_match = re.search(r"(PS\s+.+?>)", prompt_line)
-            if prompt_match:
-                terminal_prompt_label.value = prompt_match.group(1)
-                terminal_prompt_label.tooltip = prompt_match.group(1)
-                actualizar_control_seguro(terminal_prompt_label)
-            terminal_output.controls = list(reversed(terminal_row_controls))
+            app_controls_by_row: dict[int, list[ft.Text]] = {}
+            for anchor, control in zip(
+                terminal_app_output_anchors,
+                terminal_app_output_controls,
+            ):
+                row_index = row_indexes.get(id(anchor), cursor_index)
+                app_controls_by_row.setdefault(row_index, []).append(control)
+            display_controls = []
+            for index, control in enumerate(terminal_row_controls):
+                display_controls.extend(app_controls_by_row.get(index, ()))
+                display_controls.append(control)
+            terminal_output.controls = display_controls
+            terminal_app_output_dirty = False
             actualizar_control_seguro(terminal_output)
             if terminal_refocus_pending and terminal_has_focus and not app_cerrando:
                 terminal_refocus_pending = False
@@ -1136,6 +1281,22 @@ def iniciar_interfaz(page: ft.Page):
                 except RuntimeError:
                     pass
         terminal_screen.dirty.clear()
+
+    def escribir_salida_terminal(texto: str):
+        nonlocal terminal_app_output_dirty
+        if app_cerrando:
+            return
+        normalized = texto.replace("\r\n", "\n").replace("\r", "\n")
+        anchor = terminal_screen.buffer[terminal_screen.cursor.y]
+        terminal_app_output_lines.extend(
+            (anchor, line) for line in ["", *normalized.split("\n"), ""]
+        )
+        if len(terminal_app_output_lines) > terminal_screen.history.size:
+            del terminal_app_output_lines[
+                : len(terminal_app_output_lines) - terminal_screen.history.size
+            ]
+        terminal_app_output_dirty = True
+        dibujar_terminal()
 
     def convertir_estilo_texto(style):
         foreground, background, bold, italics, underscore = style
@@ -1154,9 +1315,14 @@ def iniciar_interfaz(page: ft.Page):
             return
         status_text.value = message
         status_text.color = "#ff7c84"
-        terminal_stream.feed(f"\r\n{message}\r\n")
-        dibujar_terminal()
-        actualizar_pagina_seguro()
+        try:
+            escribir_salida_terminal(message)
+            actualizar_pagina_seguro()
+        except RuntimeError as error:
+            if app_cerrando or "destroyed session" in str(error).lower():
+                detener_powershell()
+                return
+            raise
 
     def leer_salida_terminal(
         process: PtyProcess,
@@ -1219,6 +1385,7 @@ def iniciar_interfaz(page: ft.Page):
             for error in errors:
                 if (
                     app_cerrando
+                    or not process.isalive()
                     or isinstance(error, ConnectionResetError)
                     or getattr(error, "winerror", None) == 10054
                     or "10054" in str(error)
@@ -1373,7 +1540,7 @@ def iniciar_interfaz(page: ft.Page):
         if "control" in pressed_modifiers and key == "c":
             selected_text = "\n".join(
                 terminal_selections[id(control)]
-                for control in terminal_row_controls
+                for control in terminal_output.controls
                 if id(control) in terminal_selections
             )
             if selected_text:
@@ -1430,6 +1597,7 @@ def iniciar_interfaz(page: ft.Page):
     def aplicar_redimension_terminal():
         nonlocal terminal_columns, terminal_rows, terminal_resize_handle
         nonlocal terminal_content_width, rendered_terminal_width
+        nonlocal terminal_app_output_dirty
         terminal_resize_handle = None
         if app_cerrando or pending_terminal_size is None:
             return
@@ -1440,16 +1608,53 @@ def iniciar_interfaz(page: ft.Page):
             return
 
         if dimensions_changed:
+            previous_rows = terminal_screen.lines
+            previous_cursor_x = terminal_screen.cursor.x
+            previous_cursor_y = terminal_screen.cursor.y
+            rows_clipped_from_top = max(0, previous_rows - rows)
+            preserve_top_rows = (
+                rows_clipped_from_top > 0
+                and previous_cursor_y < rows_clipped_from_top
+            )
+            preserved_rows = (
+                [
+                    dict(terminal_screen.buffer[y])
+                    for y in range(min(rows, previous_rows))
+                ]
+                if preserve_top_rows
+                else []
+            )
             terminal_columns, terminal_rows = columns, rows
             terminal_screen.resize(lines=rows, columns=columns)
+            if preserve_top_rows:
+                for y, previous_row in enumerate(preserved_rows):
+                    resized_row = pyte.screens.StaticDefaultDict(
+                        terminal_screen.default_char
+                    )
+                    resized_row.update(
+                        {
+                            x: cell
+                            for x, cell in previous_row.items()
+                            if x < columns
+                        }
+                    )
+                    terminal_screen.buffer[y] = resized_row
+                terminal_screen.cursor.y = min(previous_cursor_y, rows - 1)
+            else:
+                terminal_screen.cursor.y = max(
+                    0,
+                    min(previous_cursor_y - rows_clipped_from_top, rows - 1),
+                )
+            terminal_screen.cursor.x = min(previous_cursor_x, columns)
+            terminal_screen.dirty.update(range(rows))
         terminal_content_width = content_width
         rendered_terminal_width = content_width
         terminal_output.width = content_width
+        if dimensions_changed or width_changed:
+            terminal_app_output_dirty = True
         if width_changed:
             if terminal_row_controls:
                 reconstruir_filas_terminal(list(terminal_screen.history.top))
-                terminal_output.controls = list(reversed(terminal_row_controls))
-                actualizar_control_seguro(terminal_output)
 
         if dimensions_changed and shell_process and shell_process.isalive():
             try:
@@ -1457,7 +1662,7 @@ def iniciar_interfaz(page: ft.Page):
             except (WinptyError, OSError) as error:
                 if not app_cerrando:
                     informar_error_terminal(f"No se pudo redimensionar PowerShell: {error}")
-        if dimensions_changed:
+        if dimensions_changed or width_changed:
             dibujar_terminal()
 
     def al_redimensionar_terminal(event):
@@ -1481,7 +1686,7 @@ def iniciar_interfaz(page: ft.Page):
             terminal_resize_handle = loop.call_later(0.12, aplicar_redimension_terminal)
 
     # =====================================================================
-    # 2. REDIMENSIONAMIENTO FLUIDO EN VIVO CON ACTUALIZACIÓN AISLADA
+    # 2. REDIMENSIONAMIENTO DIFERIDO HASTA SOLTAR EL MOUSE
     # =====================================================================
 
     terminal_divider_bar = ft.Container(
@@ -1516,12 +1721,11 @@ def iniciar_interfaz(page: ft.Page):
 
     def iniciar_redimension_terminal(_):
         nonlocal terminal_is_resizing, terminal_resize_handle
-        nonlocal pending_drag_height, last_terminal_drag_update
+        nonlocal pending_drag_height
         if app_cerrando:
             return
         terminal_is_resizing = True
         pending_drag_height = float(terminal_height)
-        last_terminal_drag_update = 0.0
         if terminal_resize_handle is not None:
             terminal_resize_handle.cancel()
             terminal_resize_handle = None
@@ -1532,12 +1736,8 @@ def iniciar_interfaz(page: ft.Page):
         actualizar_control_seguro(terminal_divider)
 
     def redimensionar_terminal(event):
-        """
-        Redimensionamiento en vivo con actualización aislada (throttled ~50 FPS):
-        actualiza únicamente terminal_panel y terminal_divider_label sin llamar
-        a page.update() ni reconstruir las filas de pyte en cada píxel.
-        """
-        nonlocal pending_drag_height, terminal_height, last_terminal_drag_update
+        """Guarda la altura provisional y actualiza la etiqueta mientras se arrastra."""
+        nonlocal pending_drag_height
         if app_cerrando:
             return
         delta = event.primary_delta
@@ -1546,35 +1746,29 @@ def iniciar_interfaz(page: ft.Page):
         if delta is None:
             return
         maximum = obtener_altura_maxima_terminal()
-        prev_px = terminal_height
+        previous_height = int(pending_drag_height)
         pending_drag_height = max(
             130.0,
             min(float(maximum), pending_drag_height - float(delta)),
         )
-        new_px = int(pending_drag_height)
-        if new_px != prev_px:
-            terminal_height = new_px
-            terminal_panel.height = terminal_height
-            terminal_divider_label.value = f"{terminal_height} px"
-            now = time.monotonic()
-            if now - last_terminal_drag_update >= 0.02:
-                last_terminal_drag_update = now
-                actualizar_control_seguro(terminal_panel)
-                actualizar_control_seguro(terminal_divider_label)
+        if int(pending_drag_height) != previous_height:
+            terminal_divider_label.value = f"{int(pending_drag_height)} px"
+            actualizar_control_seguro(terminal_divider_label)
 
     def finalizar_redimension_terminal(_):
         """
-        Al soltar el clic del mouse, asegura la altura final del contenedor de la
-        consola de forma aislada y programa la reconfiguración única de pyte/PowerShell.
+        Aplica la altura final una sola vez; el cambio de tamaño del viewport
+        programa la reconfiguración de pyte/PowerShell.
         """
-        nonlocal terminal_resize_handle, terminal_panel_update_handle
+        nonlocal terminal_resize_handle
         nonlocal terminal_is_resizing, terminal_height
         if app_cerrando:
             return
         terminal_is_resizing = False
-        if terminal_panel_update_handle is not None:
-            terminal_panel_update_handle.cancel()
-            terminal_panel_update_handle = None
+
+        if terminal_resize_handle is not None:
+            terminal_resize_handle.cancel()
+            terminal_resize_handle = None
 
         terminal_height = int(pending_drag_height)
         terminal_panel.height = terminal_height
@@ -1585,15 +1779,6 @@ def iniciar_interfaz(page: ft.Page):
         terminal_divider_label.value = ""
         actualizar_control_seguro(terminal_panel)
         actualizar_control_seguro(terminal_divider)
-
-        if terminal_resize_handle is not None:
-            terminal_resize_handle.cancel()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            aplicar_redimension_terminal()
-        else:
-            terminal_resize_handle = loop.call_later(0.08, aplicar_redimension_terminal)
 
     async def enfocar_terminal(_):
         nonlocal terminal_has_focus, terminal_refocus_pending, editor_has_focus
@@ -1623,11 +1808,6 @@ def iniciar_interfaz(page: ft.Page):
         if terminal_resize_handle is not None:
             try:
                 terminal_resize_handle.cancel()
-            except Exception:
-                pass
-        if terminal_panel_update_handle is not None:
-            try:
-                terminal_panel_update_handle.cancel()
             except Exception:
                 pass
         proc = shell_process
@@ -2675,9 +2855,7 @@ def iniciar_interfaz(page: ft.Page):
     def escribir_en_consola(texto: str):
         if app_cerrando:
             return
-        normalizado = texto.replace("\r\n", "\n").replace("\n", "\r\n")
-        terminal_stream.feed(f"\r\n{normalizado}\r\n")
-        dibujar_terminal()
+        escribir_salida_terminal(texto)
 
     def resumir_expresion_ast(nodo) -> str:
         if nodo is None:
@@ -2836,13 +3014,76 @@ def iniciar_interfaz(page: ft.Page):
         """
         return normalize_dsl_fragment(fragmento)
 
+    def formatear_error_compilacion(error: str) -> str:
+        document_id = terminal_diagnostic_document_id
+        if document_id is None:
+            return error
+
+        location = re.search(
+            r"\blínea\s+(\d+)\s*,\s*columna\s+(\d+)",
+            error,
+            re.IGNORECASE,
+        )
+        line = int(location.group(1)) if location else None
+        column = int(location.group(2)) if location else None
+        has_column = location is not None
+        if location is None:
+            location = re.search(
+                r"Error Semántico\s+\(Línea\s+(\d+)\)",
+                error,
+                re.IGNORECASE,
+            )
+            if location:
+                line = int(location.group(1))
+        if location is None:
+            location = re.search(
+                r"Error de indentación en la línea\s+(\d+)",
+                error,
+                re.IGNORECASE,
+            )
+            if location:
+                line = int(location.group(1))
+        if location is None and "fin de archivo inesperado" in error.lower():
+            contents = editor.value or ""
+            final_line = contents.rstrip("\n").rsplit("\n", 1)[-1]
+            line = max(1, len(contents.rstrip("\n").split("\n")))
+            column = len(final_line) + 1
+            has_column = True
+        if line is None:
+            return error
+
+        column = column or 1
+        document = next(
+            (item for item in documents if item["id"] == document_id),
+            None,
+        )
+        if document is None:
+            return error
+        source_name = (
+            document["path"].name
+            if document["path"] is not None
+            else document["name"]
+        )
+        link = f"[{source_name}:{line}"
+        if has_column:
+            link += f":{column}"
+        link += "]"
+        terminal_diagnostic_targets[link] = (line, column, document_id)
+        return f"{link} {error}"
+
     def ejecutar_pipeline_compilacion(
         mostrar_en_consola: bool = True,
         codigo_override: str | None = None,
         usar_contexto_editor: bool = False,
         etiqueta_origen: str | None = None,
     ):
+        nonlocal terminal_diagnostic_document_id
         sincronizar_documento_activo()
+        terminal_diagnostic_document_id = (
+            active_document["id"]
+            if codigo_override is None and active_document is not None
+            else None
+        )
         codigo_editor_completo = editor.value or ""
 
         if codigo_override is not None:
@@ -2898,7 +3139,10 @@ def iniciar_interfaz(page: ft.Page):
                     f"COMPILANDO: {nombre_doc}",
                     "=" * 70,
                     f"[Fase Léxica] Se encontraron {len(errores_lexicos)} errores léxicos:",
-                    *[f"  • {e}" for e in errores_lexicos],
+                    *[
+                        f"  • {formatear_error_compilacion(e)}"
+                        for e in errores_lexicos
+                    ],
                     "[Fase Sintáctica] Omitida debido a errores léxicos previos.",
                     "[Fase Semántica] Omitida debido a errores léxicos previos.",
                     "=" * 70,
@@ -2922,7 +3166,10 @@ def iniciar_interfaz(page: ft.Page):
                     "=" * 70,
                     "[Fase Léxica] ÉXITO (0 errores léxicos).",
                     f"[Fase Sintáctica] Se encontraron {len(errores_sintacticos)} errores sintácticos:",
-                    *[f"  • {e}" for e in errores_sintacticos],
+                    *[
+                        f"  • {formatear_error_compilacion(e)}"
+                        for e in errores_sintacticos
+                    ],
                     "[Fase Semántica] Omitida debido a errores sintácticos previos.",
                     "=" * 70,
                 ]
@@ -2953,7 +3200,10 @@ def iniciar_interfaz(page: ft.Page):
                     "[Fase Léxica] ÉXITO (0 errores léxicos).",
                     "[Fase Sintáctica] ÉXITO (0 errores sintácticos).",
                     f"[Fase Semántica] Se encontraron {len(errores_sem)} errores semánticos:",
-                    *[f"  • {e}" for e in errores_sem],
+                    *[
+                        f"  • {formatear_error_compilacion(e)}"
+                        for e in errores_sem
+                    ],
                     "=" * 70,
                 ]
                 escribir_en_consola("\n".join(lineas))
@@ -3477,12 +3727,6 @@ def iniciar_interfaz(page: ft.Page):
                 ft.Container(
                     content=terminal_listener,
                     expand=True,
-                ),
-                ft.Container(
-                    content=terminal_prompt_label,
-                    padding=ft.Padding.only(left=12, top=3, bottom=4),
-                    border=ft.Border.only(top=ft.BorderSide(1, BORDER)),
-                    on_click=enfocar_terminal,
                 ),
             ],
             spacing=0,
