@@ -1,5 +1,5 @@
 class Node:
-    """Clase base para todos los nodos del árbol sintáctico (AST)."""
+    # clase base para los nodos del arbol
     lineno: int = 0
 
     def accept(self, visitor):
@@ -15,7 +15,7 @@ class Program(Node):
         return f"Program(statements={self.statements})"
 
 
-# Clases para Declaración de Modelos (DDL)
+# clases para los modelos de tablas
 class ModelDeclaration(Node):
     def __init__(self, name, fields, lineno=0):
         self.name = name
@@ -61,7 +61,7 @@ class Constraint(Node):
         return f"Constraint({self.constraint_type})"
 
 
-# Clases para Operaciones de Base de Datos y Encadenamiento (DML)
+# calses para las operasiones de la db y metodos
 class MethodCall(Node):
     def __init__(self, method, arguments=None, lineno=0):
         self.method = method
@@ -99,7 +99,7 @@ class Parameter(Node):
         return f"Parameter(name={self.name}, value={self.value})"
 
 
-# Clases para Expresiones y Valores
+# nodos para las expresiones y valores
 class Expression(Node):
     pass
 

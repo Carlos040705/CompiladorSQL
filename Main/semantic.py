@@ -13,9 +13,7 @@ from ast_nodes import (
 )
 
 
-# =====================================================================
-# 0. EXTRACCIÓN DE CONTEXTO DE MODELOS Y NORMALIZACIÓN DE FRAGMENTOS
-# =====================================================================
+# funciones para sacar los modelos del archivo y limpiar fragmentos
 
 _MODEL_HEADER_RE = re.compile(r"^model\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:", re.IGNORECASE)
 _FIELD_HEADER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*\s*:")
@@ -29,12 +27,7 @@ _VALID_FIELD_TYPES = {"STRING", "TEXT", "NUM", "AUTO", "DECIMAL", "BOOL", "DATE"
 
 
 def _extract_model_blocks_list(full_code: str) -> List[str]:
-    """
-    Extrae cada bloque `model <nombre>:` del código completo, normalizando
-    la sangría de sus declaraciones de atributos a exactamente 4 espacios ('    ')
-    sin importar si el archivo original mezcló 1, 2, 3 o 4 espacios.
-    Devuelve una lista donde cada elemento es el código fuente de un bloque `model`.
-    """
+    # saca cada bloque model del codigo y arregla su sangria a 4 espacios
     if not full_code or not full_code.strip():
         return []
 
@@ -48,7 +41,7 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
     for raw_line in lines:
         stripped = raw_line.strip()
 
-        # Manejo de comentarios multilínea /* ... */
+        # saltar comentarios de varias lineas
         if in_multiline_comment:
             if "*/" in stripped:
                 in_multiline_comment = False
@@ -58,14 +51,14 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
                 in_multiline_comment = True
             continue
 
-        # Eliminar comentario de una línea '//'
+        # quitar comentarios de una linea
         code_part = raw_line.split("//", 1)[0].rstrip()
         code_stripped = code_part.strip()
 
         if not code_stripped:
             continue
 
-        # ¿Es un encabezado `model <nombre>:` (con cualquier sangría base)?
+        # revisar si exite un encabezado de modelo nuevo
         if _MODEL_HEADER_RE.match(code_stripped):
             if current_block is not None and len(current_block) > 1:
                 blocks.append(current_block)
@@ -73,7 +66,7 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
             continue
 
         if current_block is not None:
-            # ¿Es una declaración de atributo `<identificador> : <tipo>...` y no una operación DML ni continuación?
+            # revisar si es un campo de la tabla y no una consulta
             if (
                 _FIELD_HEADER_RE.match(code_stripped)
                 and not _MODEL_HEADER_RE.match(code_stripped)
@@ -83,7 +76,7 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
             ):
                 current_block.append("    " + code_stripped)
             else:
-                # Fin del bloque model al encontrar una operación DML, continuación `.metodo(...)` u otra sentencia
+                # aqui termina el bloque del modelo si ya viene otra cosa
                 if len(current_block) > 1:
                     blocks.append(current_block)
                 current_block = None
@@ -95,11 +88,7 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
 
 
 def extract_model_blocks_source(full_code: str) -> str:
-    """
-    Extrae únicamente los bloques `model <nombre>:` (con sus campos normalizados
-    a 4 espacios de sangría) a partir del código completo del editor, ignorando
-    operaciones DML sueltas.
-    """
+    # junta todos los bloques model limpios en un solo string
     blocks = _extract_model_blocks_list(full_code)
     if not blocks:
         return ""
@@ -107,21 +96,14 @@ def extract_model_blocks_source(full_code: str) -> str:
 
 
 def normalize_dsl_fragment(fragment: str) -> str:
-    """
-    Normalización inteligente para fragmentos copiados al portapapeles:
-    - Convierte tabulaciones en 4 espacios y normaliza saltos de línea.
-    - Si el fragmento contiene únicamente operaciones DML (sin encabezados `model <nombre>:`),
-      elimina los espacios iniciales de cada línea para evitar tokens INDENT o errores de sangría.
-    - Si el fragmento contiene bloques `model` (solos o junto con operaciones DML), aplica
-      `textwrap.dedent` y normaliza la sangría de los atributos de `model` a exactamente 4 espacios.
-    """
+    # acomoda la indentasion cuando copian y pegan un pedazo de codigo
     if not fragment or not fragment.strip():
         return ""
 
     cleaned = textwrap.dedent(fragment.replace("\r\n", "\n").replace("\t", "    "))
     lines = cleaned.splitlines()
 
-    # Determinar si el fragmento contiene algún encabezado `model <nombre>:`
+    # ver si el fragmento trae algun modelo declarado
     has_model_header = False
     in_multiline = False
     for raw_line in lines:
@@ -141,12 +123,12 @@ def normalize_dsl_fragment(fragment: str) -> str:
 
     normalized_lines: List[str] = []
     if not has_model_header:
-        # Solo operaciones DML (o comentarios): quitar sangría izquierda en cada línea
+        # si son puras consultas le quitamos los espacios de la izquierda
         for raw_line in lines:
             normalized_lines.append(raw_line.lstrip(" "))
         return "\n".join(normalized_lines) + "\n"
 
-    # El fragmento incluye al menos un bloque `model <nombre>:`
+    # si trae modelos cuidamos los 4 espacios de adentro
     in_model = False
     in_multiline = False
     for raw_line in lines:
@@ -189,10 +171,7 @@ def normalize_dsl_fragment(fragment: str) -> str:
 
 
 def _parse_model_source_quietly(source_text: str) -> List[ModelDeclaration]:
-    """
-    Ejecuta el lexer y parser sobre `source_text` preservando intacto el estado
-    global de errores léxicos/sintácticos y el número de línea del lexer.
-    """
+    # corre el lexer y parser temp sin ensuciar las listas de errores
     if not source_text or not source_text.strip():
         return []
 
@@ -236,12 +215,7 @@ def _parse_model_source_quietly(source_text: str) -> List[ModelDeclaration]:
 
 
 def extract_context_models(full_code: str) -> List[ModelDeclaration]:
-    """
-    Parsea los bloques `model <nombre>:` del código completo del editor y devuelve
-    la lista de nodos `ModelDeclaration`. Si un archivo tiene múltiples bloques
-    `model` y alguno contiene un error sintáctico, parsea cada bloque individualmente
-    como fallback para rescatar todos los modelos válidos.
-    """
+    # saca los nodos de modelos del editor aunque otra parte tenga error
     blocks = _extract_model_blocks_list(full_code)
     if not blocks:
         return []
@@ -261,23 +235,21 @@ def extract_context_models(full_code: str) -> List[ModelDeclaration]:
     return models
 
 
-# =====================================================================
-# 1. ESTRUCTURAS DE LA TABLA DE SÍMBOLOS (ESQUEMA RELACIONAL EN MEMORIA)
-# =====================================================================
+# estructuras para la tabal de simbolos en memoria
 
 @dataclass
 class FieldSymbol:
-    """Representa una columna registrada dentro de un Modelo (Tabla)."""
+    # guarda los datos de cada columna de la tabla
     name: str
-    data_type: str                 # 'STRING', 'TEXT', 'NUM', 'AUTO', 'DECIMAL', 'BOOL', 'DATE'
-    type_args: List[int] = field(default_factory=list)  # ej. [10, 2] para DECIMAL(10,2)
-    constraints: Set[str] = field(default_factory=set)  # {'REQUIRED', 'UNIQUE', 'MAIN KEY', 'EXTERNAL KEY', 'DEFAULT'}
+    data_type: str                 # tipo de dato del campo
+    type_args: List[int] = field(default_factory=list)  # para guardar precision y escala en decimal
+    constraints: Set[str] = field(default_factory=set)  # conjunto de restricciones activas
     default_value: Optional[object] = None
     lineno: int = 0
 
     @property
     def is_required(self) -> bool:
-        """Un campo es obligatorio en inserciones si tiene REQUIRED y no es AUTO ni tiene DEFAULT."""
+        # es obligatorio al insertar si tiene required y no es auto ni trae default
         return ('REQUIRED' in self.constraints) and (self.data_type != 'AUTO') and ('DEFAULT' not in self.constraints)
 
     def clone(self) -> "FieldSymbol":
@@ -293,7 +265,7 @@ class FieldSymbol:
 
 @dataclass
 class ModelSymbol:
-    """Representa un Modelo (Tabla SQL) en la Tabla de Símbolos."""
+    # guarda la info de una tabla y sus columnas
     name: str
     fields: Dict[str, FieldSymbol] = field(default_factory=dict)
     lineno: int = 0
@@ -316,7 +288,7 @@ class ModelSymbol:
 
 
 class SymbolTable:
-    """Tabla de Símbolos global del compilador."""
+    # tabla de simbolos donde registramos todos los modelos
     def __init__(self):
         self.models: Dict[str, ModelSymbol] = {}
 
@@ -338,10 +310,7 @@ class SymbolTable:
         other_table: Optional[Union["SymbolTable", Dict[str, ModelSymbol]]],
         overwrite: bool = True,
     ) -> None:
-        """
-        Copia o actualiza los `ModelSymbol` (y sus `FieldSymbol` clonados) desde
-        otra tabla de símbolos sin perder los modelos ya registrados.
-        """
+        # copia los modelos de otra tabla pq no se pierdan los de la sesion
         if other_table is None:
             return
         source_models = (
@@ -357,7 +326,7 @@ class SymbolTable:
                 self.models[norm_key] = model_sym.clone()
 
     def resolve_field_in_scope(self, field_name: str, active_models: List[ModelSymbol]) -> List[FieldSymbol]:
-        """Busca un atributo en todos los modelos activos de la consulta (incluyendo modelos unidos por .link())."""
+        # busca un campo en las tablas activas de la consulta
         matches = []
         for model in active_models:
             f_sym = model.get_field(field_name)
@@ -383,10 +352,7 @@ class SymbolTable:
 
 
 def _parse_models_fallback_regex(full_code: str) -> SymbolTable:
-    """
-    Analizador de respaldo línea por línea sobre los bloques `model` en caso de que
-    el parser de PLY falle por algún token inesperado en otro lugar del archivo.
-    """
+    # respaldo con regex por si el parser falla en alguna linea
     table = SymbolTable()
     if not full_code or not full_code.strip():
         return table
@@ -467,7 +433,7 @@ def _parse_models_fallback_regex(full_code: str) -> SymbolTable:
                     )
                     continue
 
-            # Línea que no pertenece al bloque model
+            # si la linea ya no es del modelo cerramos el bloque
             if current_model.fields:
                 table.models[current_model.name.lower()] = current_model
             current_model = None
@@ -482,13 +448,7 @@ def build_context_symbol_table(
     full_code: str,
     fallback_table: Optional[SymbolTable] = None,
 ) -> SymbolTable:
-    """
-    Construye una `SymbolTable` de contexto combinando:
-    1. `fallback_table` (si se proporciona, como `session_symbol_table`).
-    2. Los modelos extraídos por AST mediante `extract_context_models(full_code)`.
-    3. El analizador de respaldo línea por línea (`_parse_models_fallback_regex`)
-       por si algún modelo no pudo ser parseado por PLY.
-    """
+    # arma la tabla de simbolos juntando los modelos del archivo y de la sesion
     result_table = SymbolTable()
     if fallback_table is not None:
         result_table.merge_from(fallback_table, overwrite=True)
@@ -503,22 +463,20 @@ def build_context_symbol_table(
             result_table.merge_from(temp_analyzer.symbol_table, overwrite=True)
 
         regex_table = _parse_models_fallback_regex(full_code)
-        # Inyectar cualquier modelo que el parser de PLY no haya podido construir
+        # meter cualquier modelo que haya rescatado el regex
         result_table.merge_from(regex_table, overwrite=False)
 
     return result_table
 
 
-# =====================================================================
-# 2. SISTEMA DE TIPOS Y REGLAS DE COMPATIBILIDAD
-# =====================================================================
+# sistema de tipos y reglas para ver si son compatibles
 
 NUMERIC_TYPES = {'NUM', 'AUTO', 'DECIMAL'}
 TEXT_TYPES = {'STRING', 'TEXT', 'DATE'}
 
 
 def map_literal_to_semantic_type(literal_token_type: str) -> str:
-    """Convierte el tipo de token léxico al tipo semántico interno."""
+    # pasa el tipo del token al tipo que usamos en el semantico
     mapping = {
         'NUMBER_INT': 'NUM',
         'NUMBER_DECIMAL': 'DECIMAL',
@@ -533,26 +491,26 @@ def map_literal_to_semantic_type(literal_token_type: str) -> str:
 
 
 def are_types_compatible_for_assignment(target_type: str, value_type: str) -> bool:
-    """Verifica si un valor de tipo `value_type` puede asignarse a un campo de tipo `target_type`."""
+    # revisa si se puede haser la asignacion a ese tipo de columna
     if target_type == 'ERROR' or value_type == 'ERROR':
-        return True  # Evita cascada de errores si ya se reportó un error previo
+        return True  # para no repetir errores en cascada
     if value_type == 'NULL':
-        return True  # El control de nulabilidad se hace verificando la restricción REQUIRED
+        return True  # lo de null se checa aparte con el required
     if target_type == value_type:
         return True
-    # Compatibilidad numérica: un entero (NUM) puede asignarse a DECIMAL, pero un DECIMAL no a NUM
+    # un entero cabe en decimal pero al reves no
     if target_type == 'DECIMAL' and value_type in NUMERIC_TYPES:
         return True
     if target_type == 'NUM' and value_type in {'NUM', 'AUTO'}:
         return True
-    # Compatibilidad de texto/fechas: STRING, TEXT y DATE son compatibles entre sí
+    # textos y fechas se aceptan entre si
     if target_type in {'STRING', 'TEXT'} and value_type in TEXT_TYPES:
         return True
     return False
 
 
 def are_types_comparable(left_type: str, right_type: str, operator: str) -> bool:
-    """Verifica si dos tipos pueden compararse con =, !=, <, >, <=, >=."""
+    # checa si dos tipos se pueden comparar con operadores relacionales
     if 'ERROR' in (left_type, right_type):
         return True
     if 'NULL' in (left_type, right_type):
@@ -566,9 +524,7 @@ def are_types_comparable(left_type: str, right_type: str, operator: str) -> bool
     return False
 
 
-# =====================================================================
-# 3. ANALIZADOR SEMÁNTICO (PATRÓN VISITOR)
-# =====================================================================
+# analizador semantico recorriendo el ast
 
 class SemanticAnalyzer(Visitor):
     def __init__(self):
@@ -589,10 +545,7 @@ class SemanticAnalyzer(Visitor):
         context_models: Sequence[ModelDeclaration],
         skip_model_names: Optional[Set[str]] = None,
     ):
-        """
-        Registra declaraciones `model` de contexto en la Tabla de Símbolos
-        sin añadirlas al AST del fragmento que se va a compilar/generar.
-        """
+        # carga los modelos de contexto en la tabla sin meterlos al sql final
         skip_set = {name.lower() for name in (skip_model_names or set())}
         with contextlib.redirect_stdout(io.StringIO()):
             for model_node in context_models:
@@ -603,7 +556,7 @@ class SemanticAnalyzer(Visitor):
                 if self.symbol_table.get_model(model_node.name) is not None:
                     continue
                 self.visit_ModelDeclaration(model_node)
-        # Limpiar cualquier advertencia/error del pre-cargado para evaluar solo el fragmento
+        # borramos errores previos para evaluar solo la seleccion
         self.errors.clear()
 
     def preload_symbol_table(
@@ -611,10 +564,7 @@ class SemanticAnalyzer(Visitor):
         source_symbols: Optional[Union[SymbolTable, Dict[str, ModelSymbol]]],
         skip_model_names: Optional[Set[str]] = None,
     ):
-        """
-        Inyecta en `self.symbol_table` cualquier `ModelSymbol` presente en `source_symbols`
-        que aún no esté registrado ni sea redeclarado explícitamente en el AST actual.
-        """
+        # mete los modelos guardados que no esten ya en la tabla actual
         if source_symbols is None:
             return
         skip_set = {name.lower() for name in (skip_model_names or set())}
@@ -687,12 +637,12 @@ class SemanticAnalyzer(Visitor):
             self.visit(ast_root)
         return self.errors, self.symbol_table
 
-    # --- Visita del Programa ---
+    # recorre todas las sentencias del programa
     def visit_Program(self, node: Program):
         for stmt in node.statements:
             self.visit(stmt)
 
-    # --- 3.1 Validación de Declaración de Modelos (DDL) ---
+    # validacion de modelos ddl
     def visit_ModelDeclaration(self, node: ModelDeclaration):
         lineno = getattr(node, 'lineno', 0)
         model_sym = ModelSymbol(name=node.name, lineno=lineno)
@@ -728,7 +678,7 @@ class SemanticAnalyzer(Visitor):
         dtype_name = node.data_type.type_name.upper()
         dtype_args = node.data_type.args or []
 
-        # Validar precisión y escala en DECIMAL(p, s)
+        # validar los parmetros del decimal
         if dtype_name == 'DECIMAL' and len(dtype_args) == 2:
             precision, scale = dtype_args[0], dtype_args[1]
             if precision <= 0 or scale < 0 or scale > precision:
@@ -783,7 +733,7 @@ class SemanticAnalyzer(Visitor):
             lineno=lineno
         )
 
-    # --- 3.2 Validación de Operaciones y Cadenas de Métodos (DML) ---
+    # validasion de consultas y cadenas de metodos dml
     def visit_DbOperation(self, node: DbOperation):
         lineno = getattr(node, 'lineno', 0)
         base_model = self._resolve_or_inject_model(node.model_name)
@@ -794,10 +744,10 @@ class SemanticAnalyzer(Visitor):
             )
             return
 
-        # Contexto de modelos activos en esta operación (inicia con el modelo base)
+        # guardamos las tablas activas empezando por el modelo base
         self.active_models = [base_model]
 
-        # Soportar tanto la estructura nueva (node.calls) como la anterior (node.method / node.arguments)
+        # soporte por si viene una lista de llamadas o una sola
         calls = getattr(node, 'calls', None)
         if calls is None:
             from ast_nodes import Node
@@ -807,17 +757,17 @@ class SemanticAnalyzer(Visitor):
                     self.arguments = a
             calls = [_TempCall(node.method, node.arguments)]
 
-        # Pre-procesar .link(OtroModelo) en la cadena para incorporar sus campos al ámbito activo
+        # revisar primero los link para agregar esas tablas al contexto
         for call in calls:
             if call.method.lower() == 'link':
                 call_lineno = getattr(call, 'lineno', lineno) or lineno
                 self._validate_link_call(call, call_lineno)
 
-        # Validar coherencia de la cadena de métodos y cada eslabón
+        # checar que el orden de los metodos tenga sentido
         self._validate_method_chain_coherence(calls, lineno)
 
         for index, call in enumerate(calls):
-            if call.method.lower() != 'link':  # link ya fue validado
+            if call.method.lower() != 'link':  # el link ya se reviso arriba
                 call_lineno = getattr(call, 'lineno', lineno) or lineno
                 self._validate_single_call(
                     call,
@@ -863,13 +813,13 @@ class SemanticAnalyzer(Visitor):
 
     def _validate_method_chain_coherence(self, calls: list, lineno: int):
         methods = [c.method.lower() for c in calls]
-        # new/add no deben encadenarse con cláusulas de consulta
+        # new y add van solos sin otros metodos
         if ('new' in methods or 'add' in methods) and len(methods) > 1:
             self.report_error(
                 f"El método de inserción '.{methods[0]}()' no puede encadenarse con otros métodos ({methods}).",
                 lineno
             )
-        # ifgroup (HAVING) requiere group (GROUP BY) en la cadena
+        # ifgroup necesita que haya un group antes
         if 'ifgroup' in methods and 'group' not in methods:
             ifgroup_call = next((c for c in calls if c.method.lower() == 'ifgroup'), None)
             err_lineno = getattr(ifgroup_call, 'lineno', lineno) or lineno
@@ -878,7 +828,7 @@ class SemanticAnalyzer(Visitor):
                 err_lineno
             )
 
-        # Mezcla de operaciones mutadoras o terminales incompatibles
+        # no dejar que mezclen modify y remove juntos
         if 'modify' in methods and 'remove' in methods:
             second_mut = next(
                 (c for c in calls if c.method.lower() in ('modify', 'remove') and c != calls[0]),
@@ -907,7 +857,7 @@ class SemanticAnalyzer(Visitor):
                         err_lineno
                     )
 
-        # Orden inválido de filtrado respecto a mutaciones
+        # el filtro if tiene q ir antes del modify o remove
         seen_mutation = None
         for call in calls:
             m = call.method.lower()
@@ -920,7 +870,7 @@ class SemanticAnalyzer(Visitor):
                     err_lineno
                 )
 
-        # Cláusulas únicas duplicadas en la misma cadena
+        # revisar que no repitan metodos que solo van una vez
         single_clause_methods = {'take', 'skip', 'group', 'ifgroup', 'modify', 'remove', 'new', 'add'}
         seen_single_clauses = set()
         for call in calls:
@@ -959,7 +909,7 @@ class SemanticAnalyzer(Visitor):
                     )
                 seen_parameters.add(key)
 
-        # 1. Inserción: .new(...) o .add(...)
+        # insercion de registros con new o add
         if method in ('new', 'add'):
             if not args:
                 self.report_error(
@@ -979,7 +929,7 @@ class SemanticAnalyzer(Visitor):
                 self._validate_parameter_assignment(arg, base_model, is_insert=True, lineno=arg_lineno)
                 provided_fields.add(arg.name.lower())
 
-            # Verificar campos obligatorios (REQUIRED sin DEFAULT y que no sean AUTO)
+            # revisar que no falte ningun campo obligatorio
             for f_sym in base_model.fields.values():
                 if f_sym.is_required and f_sym.name.lower() not in provided_fields:
                     self.report_error(
@@ -987,7 +937,7 @@ class SemanticAnalyzer(Visitor):
                         call_lineno
                     )
 
-        # 2. Actualización: .modify(...)
+        # actualizar datos con modify
         elif method == 'modify':
             if not args:
                 self.report_error(
@@ -1005,14 +955,14 @@ class SemanticAnalyzer(Visitor):
                     continue
                 self._validate_parameter_assignment(arg, base_model, is_insert=False, lineno=arg_lineno)
 
-        # 3. Consulta / Proyección: .find(...)
+        # consulta de campos con find
         elif method == 'find':
             for arg in args:
                 arg_lineno = getattr(arg, 'lineno', call_lineno) or call_lineno
                 if isinstance(arg, Identifier):
                     self._resolve_field_or_error(arg.name, arg_lineno)
                 elif isinstance(arg, Parameter):
-                    # Soporta sintaxis corta Estudiante.find(edad = 67)
+                    # permite poner un filtro directo adentro del find
                     self._validate_parameter_filter(arg, arg_lineno)
                 else:
                     cond_type = self.visit(arg)
@@ -1022,7 +972,7 @@ class SemanticAnalyzer(Visitor):
                             arg_lineno
                         )
 
-        # 4. Filtros condicionales: .if(...) / .ifgroup(...) / .remove(...)
+        # validacion de condiciones en if ifgroup y remove
         elif method in ('if', 'ifgroup', 'remove'):
             if method == 'remove' and not has_prior_filter and not args:
                 self.report_error(
@@ -1044,7 +994,7 @@ class SemanticAnalyzer(Visitor):
                             arg_lineno
                         )
 
-        # 5. Ordenamiento y Agrupación: .up(...), .down(...), .group(...)
+        # ordenar y agrupar por columnas
         elif method in ('up', 'down', 'group'):
             if not args:
                 self.report_error(f"El método '.{method}()' requiere al menos un nombre de campo.", call_lineno)
@@ -1059,7 +1009,7 @@ class SemanticAnalyzer(Visitor):
                 else:
                     self._resolve_field_or_error(arg.name, arg_lineno)
 
-        # 6. Paginación: .take(N) y .skip(N)
+        # limite y salto de filas con take y skip
         elif method in ('take', 'skip'):
             if len(args) != 1:
                 self.report_error(f"El método '.{method}()' requiere exactamente 1 argumento entero.", call_lineno)
@@ -1091,7 +1041,7 @@ class SemanticAnalyzer(Visitor):
                     arg_lineno
                 )
 
-        # 7. Funciones de agregación: .count(), .sum(campo), .avg(campo), .max(campo), .min(campo)
+        # funciones de agregacion como count sum avg max y min
         elif method == 'count':
             if len(args) > 1:
                 self.report_error("El método '.count()' acepta como máximo 1 campo opcional.", call_lineno)
@@ -1121,7 +1071,7 @@ class SemanticAnalyzer(Visitor):
         else:
             self.report_error(f"El método '.{method}()' no es una operación válida del lenguaje.", call_lineno)
 
-    # --- Auxiliares de validación de parámetros y campos ---
+    # funciones auxiliares para revisar campos y aurgumentos
     def _resolve_field_or_error(self, field_name: str, lineno: int) -> Optional[FieldSymbol]:
         if self.active_models:
             base_field = self.active_models[0].get_field(field_name)
@@ -1203,7 +1153,7 @@ class SemanticAnalyzer(Visitor):
             self._validate_decimal_overflow(f_sym.name, f_sym.type_args, param.value, param_lineno)
 
     def _validate_parameter_filter(self, param: Parameter, lineno: int):
-        """Valida un Parameter(campo, valor) cuando se usa como condición de igualdad (ej. .if(nombre = 'Jose'))."""
+        # valida cuando usan campo igual a valor como filtro
         param_lineno = getattr(param, 'lineno', lineno) or lineno
         f_sym = self._resolve_field_or_error(param.name, param_lineno)
         val_type = self.visit(param.value)
@@ -1213,7 +1163,7 @@ class SemanticAnalyzer(Visitor):
                 param_lineno
             )
 
-    # --- 3.3 Inferencia y Verificación de Tipos en Expresiones ---
+    # revisar tipos de datos en las expresiones
     def visit_Literal(self, node: Literal) -> str:
         if node.literal_type.upper() == 'DATE_LITERAL':
             lineno = getattr(node, 'lineno', 0)
@@ -1271,7 +1221,7 @@ class SemanticAnalyzer(Visitor):
         if 'ERROR' in (left_type, right_type):
             return 'ERROR'
 
-        # 1. Operadores Aritméticos: +, -, *, /, %
+        # operasiones aritmeticas basicas
         if op in ('+', '-', '*', '/', '%'):
             if left_type not in NUMERIC_TYPES or right_type not in NUMERIC_TYPES:
                 self.report_error(
@@ -1280,7 +1230,7 @@ class SemanticAnalyzer(Visitor):
                     lineno
                 )
                 return 'ERROR'
-            # Detect zero divisors even when they are expressed as constant subexpressions.
+            # checar que no dividan entre cero
             if op in ('/', '%') and self._constant_numeric_value(node.right) == 0:
                 self.report_error(f"División o módulo por cero detectado en la operación '{op}'.", lineno)
                 return 'ERROR'
@@ -1288,7 +1238,7 @@ class SemanticAnalyzer(Visitor):
                 return 'DECIMAL'
             return 'NUM'
 
-        # 2. Operadores Relacionales: =, !=, <, >, <=, >=
+        # comparaciones relacionales
         if op in ('=', '!=', '<', '>', '<=', '>='):
             if not are_types_comparable(left_type, right_type, op):
                 self.report_error(
@@ -1298,7 +1248,7 @@ class SemanticAnalyzer(Visitor):
                 return 'ERROR'
             return 'BOOL'
 
-        # 3. Operadores Lógicos: AND, OR
+        # operadores logicos and y or
         if op in ('AND', 'OR'):
             if left_type != 'BOOL' or right_type != 'BOOL':
                 self.report_error(

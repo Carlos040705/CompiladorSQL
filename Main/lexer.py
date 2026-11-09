@@ -3,6 +3,7 @@ import ply.lex as lex
 
 errores_lexicos = []
 
+# palabras reservadas del lenguaje
 reserved = {
     'model': 'MODEL', 
     'change': 'CHANGE', 
@@ -149,12 +150,11 @@ def t_SALTO_LINEA(t):
     rest = t.lexer.lexdata[t.lexer.lexpos:]
     rest_effective = _LEADING_INTERMEDIATE_COMMENTS_RE.sub('', rest)
 
-    # Caso 1 (Estilo A): la siguiente línea efectiva continúa la cadena con '.metodo'
+    # si la siguiente linea sigue la cadena con punto no mandamos salto
     if _STYLE_A_CONTINUATION_RE.match(rest_effective):
         return None
 
-    # Caso 2 (Estilo B): la línea anterior terminó en '.' (DOT) sin líneas en blanco vacías
-    # y la siguiente línea continúa con 'metodo('
+    # si la linea anterior termino en punto y abajo sigue el metodo
     if getattr(t.lexer, 'last_token_type', None) == 'DOT' and t.value.count('\n') == 1:
         if _STYLE_B_CONTINUATION_RE.match(rest) or (
             rest.startswith(('//', '/*')) and _STYLE_B_CONTINUATION_RE.match(rest_effective)
@@ -175,6 +175,7 @@ def t_SALTO_LINEA(t):
     t.type = 'SALTO_LINEA'
     t.value = '\n'
 
+    # calculo de indentasion para meter indent o dedent a la cola
     if indent_level > t.lexer.indents[-1]:
         t.lexer.indents.append(indent_level)
         tok = lex.LexToken()

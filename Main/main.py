@@ -24,6 +24,7 @@ def analizar_archivo(ruta: Path, ejecutar_pg: bool = False):
     if not codigo_prueba.endswith("\n"):
         codigo_prueba += "\n"
 
+    # primero sacamos los tokens con el lexer
     errores_lexicos.clear()
     lexer.input(codigo_prueba)
     tokens = []
@@ -40,6 +41,7 @@ def analizar_archivo(ruta: Path, ejecutar_pg: bool = False):
         print("=" * 75)
         return None
 
+    # armamos el arbol sintactico
     errores_sintacticos.clear()
     token_iterator = iter(tokens)
     ast_resultado = parser.parse(tokenfunc=lambda: next(token_iterator, None))
@@ -68,7 +70,7 @@ def analizar_archivo(ruta: Path, ejecutar_pg: bool = False):
 
     print("\n[Fase Semántica] ÉXITO (0 errores semánticos).")
 
-    # Fase 4: Generación de Código SQL (PostgreSQL)
+    # pasamos el arbol a codigo sql de postgres
     generador = SQLCodeGenerator(tabla_simbolos)
     sentencias_sql = generador.generate(ast_resultado)
     script_sql = sentencias_sql.script
@@ -84,7 +86,7 @@ def analizar_archivo(ruta: Path, ejecutar_pg: bool = False):
     print(f"\n[Fase Generación SQL] ÉXITO ({len(sentencias_sql)} sentencias generadas).")
     print(f"[Archivo SQL guardado] {archivo_sql}")
 
-    # Fase 5 (Opcional): Ejecución real en PostgreSQL
+    # si pusieron el flag de ejecusion lo corremos en postgres
     if ejecutar_pg and sentencias_sql:
         executor = PostgresExecutor()
         reporte = executor.execute_statements(sentencias_sql, reset_tables=True, ensure_db=True)

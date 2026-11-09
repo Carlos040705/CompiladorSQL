@@ -18,7 +18,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 def compile_to_sql(source: str):
-    """Ejecuta el pipeline completo Léxico -> Sintáctico -> Semántico -> Generación SQL."""
+    # corre todas las fases del compilador y regresa el sql
     if not source.endswith("\n"):
         source += "\n"
 
@@ -177,7 +177,7 @@ Estudiante.min(edad)
         self.assertEqual(stmts[8], "SELECT MIN(edad) FROM estudiante;")
 
     def test_link_join_and_postgresql_strict_group_by_and_disambiguation(self):
-        # 1. Con EXTERNAL KEY -> INNER JOIN
+        # prueba con external key para ver que arme inner join
         source_fk = """Model Estudiante:
 \tmatricula: auto main key
 \tsemestre: num
@@ -192,7 +192,7 @@ Estudiante.find(semestre).link(Curso).group(semestre).ifgroup(semestre > 3).up(s
             "SELECT semestre FROM estudiante INNER JOIN curso ON estudiante.matricula = curso.id_estudiante GROUP BY semestre HAVING semestre > 3 ORDER BY semestre ASC;",
         )
 
-        # 2. Sin EXTERNAL KEY y con columnas ambiguas + columnas extra en SELECT/HAVING -> CROSS JOIN y desambiguación
+        # prueba sin llave foranea para que saque cross join y separe campos repetidos
         source_cross = """Model Estudiante:
 \tmatricula: auto main key
 \tsemestre: num

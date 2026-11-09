@@ -53,21 +53,15 @@ ACCENT = "#24b8ad"
 BLUE = "#4da3ff"
 
 
-# =====================================================================
-# UTILIDADES DE PORTAPAPELES DEL SISTEMA (WINDOWS NATIVO + TKINTER)
-# =====================================================================
+# funciones para leer y copiar al portapapeles de windows
 
 CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
 
 
 def leer_portapapeles_sistema() -> str:
-    """
-    Lee el texto actual del portapapeles del sistema de forma síncrona e instantánea.
-    Intenta primero con tkinter (librería estándar) y usa la API nativa Win32 (ctypes)
-    como respaldo directo en Windows.
-    """
-    # 1. Intento mediante tkinter
+    # saca el texto que este copiado ahorita en el portapapeles
+    # primero intentamos leerlo con tkinter
     try:
         import tkinter as tk
 
@@ -87,7 +81,7 @@ def leer_portapapeles_sistema() -> str:
     except Exception:
         pass
 
-    # 2. Respaldo directo con API Win32 (ctypes)
+    # si falla usamos ctypes x defecto en windows
     if os.name == "nt":
         try:
             user32 = ctypes.windll.user32
@@ -123,13 +117,10 @@ def leer_portapapeles_sistema() -> str:
 
 
 def copiar_portapapeles_sistema(texto: str) -> bool:
-    """
-    Copia texto al portapapeles del sistema de forma síncrona usando tkinter
-    y la API nativa Win32 (ctypes) como respaldo.
-    """
+    # guarda un texto en el portapapeles del sistema
     texto_str = str(texto or "")
 
-    # 1. Intento con API Win32 (instantáneo y persistente tras cerrar ventana)
+    # primero con la api de windows para que no se borre al cerrar
     if os.name == "nt":
         try:
             user32 = ctypes.windll.user32
@@ -166,7 +157,7 @@ def copiar_portapapeles_sistema(texto: str) -> bool:
         except Exception:
             pass
 
-    # 2. Respaldo mediante tkinter
+    # respaldo con tkinter por si acaso
     try:
         import tkinter as tk
 
@@ -191,7 +182,7 @@ def crear_borde_campo(
     color_foco: str = ACCENT,
     radio: int = 4,
 ):
-    """Configuración moderna de bordes para TextField en Flet 1.0+ sin DeprecationWarning."""
+    # arma los bordes de los inputs de flet
     return {
         ft.ControlState.DEFAULT: ft.OutlineInputBorder(
             border_radius=radio,
@@ -205,7 +196,7 @@ def crear_borde_campo(
 
 
 def normalizar_tabulaciones(texto: str) -> str:
-    """Reemplaza retornos de carro Windows y convierte tabuladores '\\t' en 4 espacios."""
+    # cambia los tabs por 4 espacios y limpia saltos de linea
     return (texto or "").replace("\r\n", "\n").replace("\t", "    ")
 
 
@@ -216,7 +207,7 @@ def iniciar_interfaz(page: ft.Page):
     page.padding = 0
     page.spacing = 0
 
-    # Bandera de estado de ciclo de vida para evitar RuntimeError y WinError 10054 al cerrar
+    # bandera para saber cuando se esta cerrando la ventana y no truene
     app_cerrando = False
 
     root_directory = Path(__file__).resolve().parent.parent
@@ -298,10 +289,7 @@ def iniciar_interfaz(page: ft.Page):
                 pass
 
     def configurar_sin_foco(control):
-        """
-        Configura can_request_focus=False en el control y evita que la tecla Tab
-        robe el foco cuando el usuario está escribiendo en el editor.
-        """
+        # evita que el boton robe el foco cuando presionan tab en el editor
         if control is None:
             return control
         try:
@@ -934,7 +922,7 @@ def iniciar_interfaz(page: ft.Page):
             cerrar_menu_contextual()
             page.run_task(guardar_archivo, None, True)
         elif key_upper == "TAB" and editor_has_focus and not search_bar.visible:
-            # Evita que presionar Tab por accidente saque al usuario del editor
+            # regresar el foco al editor si presionan tab
             try:
                 page.run_task(editor.focus)
             except RuntimeError:
@@ -1685,9 +1673,7 @@ def iniciar_interfaz(page: ft.Page):
         else:
             terminal_resize_handle = loop.call_later(0.12, aplicar_redimension_terminal)
 
-    # =====================================================================
-    # 2. REDIMENSIONAMIENTO DIFERIDO HASTA SOLTAR EL MOUSE
-    # =====================================================================
+    # manejo para cambiar el alto de la consola arrastrando la barra
 
     terminal_divider_bar = ft.Container(
         height=2,
@@ -1736,7 +1722,7 @@ def iniciar_interfaz(page: ft.Page):
         actualizar_control_seguro(terminal_divider)
 
     def redimensionar_terminal(event):
-        """Guarda la altura provisional y actualiza la etiqueta mientras se arrastra."""
+        # guarda la altura temp mientras arrastran el mouse
         nonlocal pending_drag_height
         if app_cerrando:
             return
@@ -1756,10 +1742,7 @@ def iniciar_interfaz(page: ft.Page):
             actualizar_control_seguro(terminal_divider_label)
 
     def finalizar_redimension_terminal(_):
-        """
-        Aplica la altura final una sola vez; el cambio de tamaño del viewport
-        programa la reconfiguración de pyte/PowerShell.
-        """
+        # aplica la nueva altura a la consola cuando sueltan el clic
         nonlocal terminal_resize_handle
         nonlocal terminal_is_resizing, terminal_height
         if app_cerrando:
@@ -1829,25 +1812,18 @@ def iniciar_interfaz(page: ft.Page):
     page.on_disconnect = detener_powershell
     page.window.on_event = manejar_evento_ventana
 
-    # =====================================================================
-    # 3. MANEJO DE IDENTACIÓN EN VIVO ('>>' y '\t' -> 4 ESPACIOS + ENTER)
-    # =====================================================================
+    # manejo de la indentasion en vivo cuando escriben en el editor
 
     def procesar_identacion_en_vivo(old_text: str, new_text: str) -> tuple[str, int | None]:
-        """
-        Aplica reemplazo instantáneo de '>>' o '\\t' por 4 espacios ('    ')
-        y auto-identación al presionar Enter (heredando sangría previa y sumando
-        4 espacios si la línea anterior terminaba en ':').
-        Devuelve (texto_transformado, nuevo_offset_cursor_o_None).
-        """
+        # cambia tabs o flechas por 4 espacios y acomoda el enter automatico
         if new_text == old_text:
             return new_text, None
 
-        # Normalizar saltos de línea CRLF si se pegó texto
+        # limpiar saltos de linea si pegaron texto
         if "\r\n" in new_text:
             new_text = new_text.replace("\r\n", "\n")
 
-        # 1. Calcular prefijo y sufijo común entre old_text y new_text para ubicar la edición
+        # buscar en que parte del texto escribieron
         min_len = min(len(old_text), len(new_text))
         prefix_len = 0
         while prefix_len < min_len and old_text[prefix_len] == new_text[prefix_len]:
@@ -1865,7 +1841,7 @@ def iniciar_interfaz(page: ft.Page):
         inserted = new_text[prefix_len : len(new_text) - suffix_len]
         caret_offset: int | None = None
 
-        # 2. Caso Enter: el usuario acaba de insertar un salto de línea '\n'
+        # si dieron enter calculamos cuantos espacios tocan abajo
         if inserted == "\n" and len(new_text) >= len(old_text):
             line_start = new_text.rfind("\n", 0, prefix_len) + 1
             prev_line = new_text[line_start:prefix_len]
@@ -1889,7 +1865,7 @@ def iniciar_interfaz(page: ft.Page):
                 )
                 caret_offset = insert_pos + len(auto_indent)
 
-        # 3. Caso secuencia rápida '>>' o carácter '\t' -> reemplazar en vivo por 4 espacios
+        # si pusieron tab o dos signos mayor lo cambiamos x 4 espacios
         if "\t" in new_text:
             tab_idx = new_text.find("\t")
             count_tabs = new_text.count("\t")
@@ -1930,10 +1906,7 @@ def iniciar_interfaz(page: ft.Page):
     editor.on_focus = al_enfocar_editor
     editor.on_selection_change = al_cambiar_seleccion_editor
 
-    # =====================================================================
-    # 1. SISTEMA UNIFICADO DE MENÚ CONTEXTUAL FLOTANTE (page.overlay)
-    #    Y RENOMBRADO EN LÍNEA EN EL EXPLORADOR DE ARCHIVOS
-    # =====================================================================
+    # menu de clic derecho y renombrado de archivos en el explorador
 
     def cerrar_menu_contextual(_=None):
         nonlocal active_context_menu_overlay
@@ -1947,10 +1920,7 @@ def iniciar_interfaz(page: ft.Page):
             actualizar_pagina_seguro()
 
     def extraer_coordenadas_clic(event) -> tuple[float, float]:
-        """
-        Extrae de forma segura las coordenadas globales (x, y) de un TapEvent
-        en Flet 1.0+, soportando event.global_position.{x,y} y event.global_{x,y}.
-        """
+        # devulve la posicion x y de donde hicieron clic
         x_val = None
         y_val = None
         if event is not None:
@@ -1989,10 +1959,7 @@ def iniciar_interfaz(page: ft.Page):
         menu_width: float,
         menu_height: float,
     ) -> tuple[float, float]:
-        """
-        Ajusta (clamp) las coordenadas (left, top) contra las dimensiones de la
-        ventana para que el menú contextual nunca se desborde fuera de la pantalla.
-        """
+        # acomoda las coordenadas para que el menu no se salga de la ventana
         win_w = getattr(page, "width", None)
         if not win_w:
             win_obj = getattr(page, "window", None)
@@ -2339,7 +2306,7 @@ def iniciar_interfaz(page: ft.Page):
 
             expanded_directories.discard(old_resolved)
 
-            # Si el archivo estaba abierto en el editor, cerrarlo y limpiar
+            # si el archivo borrado estaba abierto en una pestana lo cerramos
             docs_a_remover = [
                 doc for doc in documents
                 if doc["path"] is not None
@@ -2569,7 +2536,7 @@ def iniciar_interfaz(page: ft.Page):
         except (OSError, UnicodeError) as error:
             establecer_estado(f"No se pudo abrir {path.name}: {error}", "#ff7c84")
             return
-        # Reemplazar automáticamente todos los caracteres '\t' por 4 espacios explícitos
+        # pasar todos los tabs a 4 espacios al abrir el archivo
         contents = normalizar_tabulaciones(raw_contents)
         crear_documento(path, contents, contents)
         establecer_estado(f"Abierto · {path}", "#56d68b")
@@ -2754,7 +2721,7 @@ def iniciar_interfaz(page: ft.Page):
                 return
             target = Path(selected)
 
-        # Permitir guardar incluso cuando el archivo está completamente vacío ("")
+        # dejar guardar aunque el archivo este en blanco
         contenido_actual = editor.value if editor.value is not None else ""
         try:
             target.write_text(contenido_actual, encoding="utf-8")
@@ -2848,9 +2815,7 @@ def iniciar_interfaz(page: ft.Page):
             padding=ft.Padding.symmetric(horizontal=11, vertical=9),
         )
 
-    # =====================================================================
-    # 4.4 COMPILAR Y EJECUTAR SELECCIÓN DESDE EL PORTAPAPELES
-    # =====================================================================
+    # funciones para la ejecusion del compilador o de la seleccion
 
     def escribir_en_consola(texto: str):
         if app_cerrando:
@@ -2973,14 +2938,10 @@ def iniciar_interfaz(page: ft.Page):
         actualizar_control_seguro(syntax_tree)
 
     def recolectar_contexto_modelos(codigo_editor_actual: str) -> list[ModelDeclaration]:
-        """
-        Recolecta los modelos declarados en el editor activo y en cualquier otra
-        pestaña abierta en `documents`, actualizando `session_symbol_table` para
-        que la Tabla de Símbolos persistente conserve todos los esquemas de la sesión.
-        """
+        # junta los modelos declarados en el editor y en las otras pestanas abiertas
         modelos_por_nombre: dict[str, ModelDeclaration] = {}
 
-        # 1. Modelos de otras pestañas abiertas en la sesión
+        # sacar modelos de las demas pestanas
         for doc in documents:
             if doc is active_document:
                 continue
@@ -2993,7 +2954,7 @@ def iniciar_interfaz(page: ft.Page):
                     overwrite=True,
                 )
 
-        # 2. Modelos del editor activo (tienen prioridad si se redefinió algún modelo)
+        # sacar modelos del archivo actual
         if codigo_editor_actual and codigo_editor_actual.strip():
             for m_node in extract_context_models(codigo_editor_actual):
                 modelos_por_nombre[m_node.name.lower()] = m_node
@@ -3005,13 +2966,7 @@ def iniciar_interfaz(page: ft.Page):
         return list(modelos_por_nombre.values())
 
     def preparar_fragmento_portapapeles(fragmento: str) -> str:
-        """
-        Normaliza un fragmento copiado al portapapeles:
-        - Convierte tabuladores en 4 espacios y normaliza saltos de línea.
-        - Si solo contiene operaciones DML, elimina los espacios iniciales de cada línea
-          para evitar tokens INDENT inesperados.
-        - Si contiene bloques `model`, aplica dedent y normaliza la sangría interna a 4 espacios.
-        """
+        # limpia la sangria del fragmento que copiaron al portapapeles
         return normalize_dsl_fragment(fragmento)
 
     def formatear_error_compilacion(error: str) -> str:
@@ -3117,10 +3072,10 @@ def iniciar_interfaz(page: ft.Page):
         if not codigo_fuente.endswith("\n"):
             codigo_fuente += "\n"
 
-        # Recolectar modelos de contexto del editor activo y documentos abiertos
+        # cargar los modelos del editor para tener el contexto listo
         modelos_contexto = recolectar_contexto_modelos(codigo_editor_completo)
 
-        # 1. Fase Léxica
+        # analisis lexico
         errores_lexicos.clear()
         with contextlib.redirect_stdout(io.StringIO()):
             lexer.input(codigo_fuente)
@@ -3151,7 +3106,7 @@ def iniciar_interfaz(page: ft.Page):
                 establecer_estado(f"Error léxico ({len(errores_lexicos)})", "#ff7c84")
             return False, None, None
 
-        # 2. Fase Sintáctica
+        # analisis sintactico
         errores_sintacticos.clear()
         token_iterator = iter(tokens)
         with contextlib.redirect_stdout(io.StringIO()):
@@ -3177,7 +3132,7 @@ def iniciar_interfaz(page: ft.Page):
                 establecer_estado(f"Error sintáctico ({len(errores_sintacticos)})", "#ff7c84")
             return False, None, None
 
-        # 3. Fase Semántica (inyectando modelos del editor + tabla de símbolos persistente de sesión)
+        # analisis semantico pasando los modelos de la sesion
         analizador_sem = SemanticAnalyzer()
         with contextlib.redirect_stdout(io.StringIO()):
             errores_sem, tabla_simbolos = analizador_sem.analyze(
@@ -3210,8 +3165,7 @@ def iniciar_interfaz(page: ft.Page):
                 establecer_estado(f"Error semántico ({len(errores_sem)})", "#ff7c84")
             return False, None, None
 
-        # 4. Fase de Generación de Código SQL (PostgreSQL)
-        # Filtrado estricto: solo se genera CREATE TABLE para modelos declarados explícitamente en ast_resultado
+        # generacion del codigo sql solo para lo que viene en el arbol
         actualizar_arbol_sintactico(ast_resultado, None)
         modelos_explicitos_ast = {
             stmt.name.lower()
@@ -3377,9 +3331,7 @@ def iniciar_interfaz(page: ft.Page):
             width=290,
         )
 
-    # =====================================================================
-    # 4.3 CONFIGURACIÓN DE POSTGRESQL CON CHECKBOXES OMITIR DDL Y OMITIR ALTER
-    # =====================================================================
+    # ventana para configurar los parmetros de conecion a postgres
 
     def abrir_configuracion_bd(_=None):
         cfg = load_db_config()

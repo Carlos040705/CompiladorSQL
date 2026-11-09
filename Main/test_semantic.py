@@ -23,6 +23,7 @@ from semantic import (
 )
 
 
+# funcion auxiliar para correr el analisis y regresar la lista de errores
 def analyze_source(source: str):
     errores_lexicos.clear()
     lexer.input(source)
@@ -284,17 +285,12 @@ Valido.new(nombre = "Prueba")
 
         session_table = SymbolTable()
         session_table.merge_from(ctx_table, overwrite=True)
-        # Mutar ctx_table no debe afectar el clon en session_table
+        # limpiar la tabal temp no debe borrar lo que ya se clono en la sesion
         ctx_table.clear()
         self.assertIsNotNone(session_table.get_model("Valido"))
 
     def test_multiline_method_chaining_preserves_exact_line_number_on_semantic_error(self):
-        # Línea 1-4: declaración de modelo
-        # Línea 6: Estudiante.find(matricula, nombre)
-        # Línea 7:     .if(edad >= 18)
-        # Línea 8:     // Comentario intermedio
-        # Línea 9:     .up(edad)
-        # Línea 10:    .take(-5)  <-- Error semántico en Línea 10
+        # cadena en varias lineas con punto al inicio para ver que marque error en la 10
         code_style_a = (
             "Model Estudiante:\n"
             "    matricula: auto main key\n"
@@ -312,7 +308,7 @@ Valido.new(nombre = "Prueba")
         self.assertIn("(Línea 10)", sem_err[0])
         self.assertIn("take()", sem_err[0])
 
-        # Estilo B: punto al final de la línea previa, error en la línea 9
+        # cadena dejando el punto al final de cada linea y error en la 9
         code_style_b = (
             "Model Estudiante:\n"
             "    matricula: auto main key\n"
@@ -354,7 +350,7 @@ Valido.new(nombre = "Prueba")
 
         self.assertEqual(len(errores_sintacticos), 6)
         joined_errors = "\n".join(errores_sintacticos)
-        # Verificar que el Error 4 (punto colgante en Línea 18) y el Error 5 (Línea 21) se siguen reportando
+        # revisar que siga detectando los errores de las lineas 18 y 21
         self.assertIn("Línea 18", joined_errors)
         self.assertIn("Línea 21", joined_errors)
 

@@ -1,3 +1,4 @@
+# clase base para recorrer los nodos del ast
 class Visitor:
     def visit(self, node, *args, **kwargs):
         if node is None:
@@ -9,6 +10,7 @@ class Visitor:
     def generic_visit(self, node, *args, **kwargs):
         raise Exception(f'No visit_{type(node).__name__} method defined in Visitor')
 
+# imprime el arbol en consola con sangria para ver q se armo
 class ASTPrinter(Visitor):
     def __init__(self):
         self.indent_level = 0

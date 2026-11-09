@@ -29,10 +29,10 @@ DEFAULT_DB_CONFIG: Dict[str, Any] = {
 
 
 def load_db_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
-    """Carga la configuración de conexión desde variables de entorno y/o db_config.json."""
+    # carga la config de conexion desde variables de entorno o el json
     config = dict(DEFAULT_DB_CONFIG)
 
-    # 1. Variables de entorno
+    # leer variables de entorno si hay
     if os.environ.get("PGHOST"):
         config["host"] = os.environ["PGHOST"]
     if os.environ.get("PGPORT"):
@@ -47,7 +47,7 @@ def load_db_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     if os.environ.get("PGDATABASE"):
         config["dbname"] = os.environ["PGDATABASE"]
 
-    # 2. Archivo db_config.json (si existe)
+    # leer el archivo json si existe
     path = config_path or DEFAULT_CONFIG_PATH
     if path.is_file():
         try:
@@ -71,7 +71,7 @@ def load_db_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def save_db_config(config: Dict[str, Any], config_path: Optional[Path] = None) -> Path:
-    """Guarda la configuración de conexión PostgreSQL en db_config.json."""
+    # guarda la config de postgres en el json
     path = config_path or DEFAULT_CONFIG_PATH
     merged = load_db_config(path)
     merged.update(config)
@@ -91,7 +91,7 @@ _LEADING_COMMENTS_RE = re.compile(r"^\s*(?:--[^\n]*\n\s*|/\*.*?\*/\s*)*", re.DOT
 
 
 def extract_leading_sql_keyword(stmt: str) -> str:
-    """Obtiene la primera palabra clave SQL de una sentencia ignorando comentarios iniciales."""
+    # saca la primera palabra sql ignorando comentarios
     cleaned = _LEADING_COMMENTS_RE.sub("", stmt or "").strip()
     if not cleaned:
         return ""
@@ -103,14 +103,7 @@ def filter_sql_statements(
     omit_ddl: bool = False,
     omit_alter: bool = True,
 ) -> Tuple[List[str], List[str]]:
-    """
-    Filtra sentencias SQL según las banderas 'Omitir DDL' y 'Omitir ALTER':
-    - Si omit_ddl es False: se permiten todas las sentencias.
-    - Si omit_ddl es True y omit_alter es True: se omiten CREATE, DROP, ALTER, TRUNCATE.
-    - Si omit_ddl es True y omit_alter es False: se omiten CREATE, DROP, TRUNCATE,
-      pero se permite ejecutar ALTER junto con DML y consultas.
-    Devuelve (sentencias_ejecutables, sentencias_omitidas).
-    """
+    # filtra las sentencias sql segun los checks de omitir ddl y alter
     if not omit_ddl:
         return list(statements), []
 
@@ -130,7 +123,7 @@ def filter_sql_statements(
 
 
 def format_ascii_table(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
-    """Formatea encabezados y filas de un SELECT en una tabla ASCII limpia."""
+    # arma una tabal en texto para mostrar los resultados del select
     if not columns:
         return "(Sin columnas)"
 
@@ -165,7 +158,7 @@ def format_ascii_table(columns: Sequence[str], rows: Sequence[Sequence[Any]]) ->
 
 @dataclass
 class StatementResult:
-    """Resultado estructurado de la ejecución de una sentencia SQL individual."""
+    # guarda los datos de ejecusion de cada sentencia
     index: int
     sql: str
     success: bool
@@ -180,7 +173,7 @@ class StatementResult:
 
 @dataclass
 class ExecutionReport:
-    """Reporte completo de la ejecución de un lote de sentencias SQL en PostgreSQL."""
+    # guarda el resumen de todo lo que se corrio en postgres
     connected: bool
     database: str
     results: List[StatementResult] = field(default_factory=list)
@@ -239,7 +232,7 @@ class ExecutionReport:
 
 
 class PostgresExecutor:
-    """Ejecutor de sentencias SQL generadas sobre una instancia real de PostgreSQL."""
+    # clase que se encarga de mandar las consultas a la db
 
     CREATE_TABLE_REGEX = re.compile(
         r"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_\"\.]+)",
@@ -282,7 +275,7 @@ class PostgresExecutor:
         }
 
     def test_connection(self, ensure_db: bool = True) -> Tuple[bool, str]:
-        """Prueba la conexión a PostgreSQL y opcionalmente crea la base destino si no existe."""
+        # prueba la conecion a postgres y crea la db si no exite
         try:
             if ensure_db:
                 self.ensure_database()
@@ -300,7 +293,7 @@ class PostgresExecutor:
             return False, str(exc)
 
     def ensure_database(self) -> bool:
-        """Se conecta a la base de mantenimiento 'postgres' y crea la base destino si aún no existe."""
+        # entra a la base x defecto para crear la nuestra si hace falta
         target_db = self.dbname
         try:
             conn = psycopg2.connect(**self.get_connection_params(dbname_override=target_db))
@@ -372,11 +365,7 @@ class PostgresExecutor:
         omit_ddl: Optional[bool] = None,
         omit_alter: Optional[bool] = None,
     ) -> ExecutionReport:
-        """
-        Ejecuta una lista de sentencias SQL en PostgreSQL, capturando filas devueltas,
-        conteo de filas afectadas y errores por sentencia mediante SAVEPOINT.
-        Aplica el filtrado de sentencias según 'omit_ddl' y 'omit_alter'.
-        """
+        # corre la lista de sentencias sql usando savepoints por si una falla
         if isinstance(statements, str):
             raw_list = [s.strip() for s in statements.split(";") if s.strip()]
             raw_list = [f"{s};" for s in raw_list]
@@ -416,7 +405,7 @@ class PostgresExecutor:
         report.connected = True
         try:
             with conn.cursor() as cur:
-                # Si omit_ddl está activo, tampoco destruimos tablas existentes en el reinicio automático
+                # si omit_ddl esta activo no borramos las tablas al reiniciar
                 if reset_tables and not omit_ddl:
                     tables_to_reset = self._extract_created_tables(stmt_list)
                     if tables_to_reset:

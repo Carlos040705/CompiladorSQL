@@ -18,12 +18,7 @@ from db_executor import (
 
 
 class SQLStatementList(list):
-    """
-    Lista de sentencias SQL generadas que también soporta operaciones de cadena
-    (como `str(res)`, búsqueda de subcadenas con `in`, `.lower()`, etc.) para máxima
-    compatibilidad tanto con consumidores que iteran por sentencia como con pruebas
-    que inspeccionan el script completo.
-    """
+    # lista de sentencias sql q tambien funciona como string para las pruebas
 
     @property
     def script(self) -> str:
@@ -53,10 +48,7 @@ class SQLStatementList(list):
 
 
 class SQLCodeGenerator(Visitor):
-    """
-    Traductor del AST validado (DSL CompiladorSQL) a código SQL ejecutable
-    en dialecto PostgreSQL.
-    """
+    # pasa el ast validado a codigo sql para postgres
 
     TYPE_MAPPING = {
         "AUTO": "SERIAL",
@@ -102,13 +94,7 @@ class SQLCodeGenerator(Visitor):
         omit_alter: bool = True,
         allowed_model_declarations: Optional[Set[str]] = None,
     ) -> SQLStatementList:
-        """
-        Recorre el AST validado y devuelve la lista de sentencias SQL de PostgreSQL.
-        Si la Tabla de Símbolos contiene modelos de contexto pre-cargados que no
-        están en `ast_root.statements` (o no están en `allowed_model_declarations`),
-        se registran en `_declared_models_so_far` para resolver llaves foráneas y
-        relaciones `.link()` sin emitir su DDL (`CREATE TABLE`).
-        """
+        # recorre el arbol y devulve la lista de sentencias sql generadas
         if symbol_table is not None:
             self.symbol_table = symbol_table
         self.statements = SQLStatementList()
@@ -155,7 +141,7 @@ class SQLCodeGenerator(Visitor):
         omit_alter: bool = True,
         allowed_model_declarations: Optional[Set[str]] = None,
     ) -> str:
-        """Devuelve todas las sentencias SQL generadas unidas en un script `.sql`."""
+        # une todas las consultas en un solo texto sql
         return self.generate(
             ast_root,
             symbol_table,
@@ -164,9 +150,7 @@ class SQLCodeGenerator(Visitor):
             allowed_model_declarations=allowed_model_declarations,
         ).script
 
-    # =====================================================================
-    # 1. VISITA DEL PROGRAMA Y DECLARACIÓN DE MODELOS (DDL)
-    # =====================================================================
+    # recorrido del programa y creacion de tablas ddl
 
     def visit_Program(self, node: Program) -> SQLStatementList:
         for stmt in node.statements:
@@ -288,15 +272,11 @@ class SQLCodeGenerator(Visitor):
         field_type: str,
         current_model: Optional[ModelSymbol],
     ) -> Optional[Tuple[str, str]]:
-        """
-        Determina a qué modelo y columna apunta una restricción `external key`.
-        1. Si el campo sigue el patrón `id_<modelo>` o `<modelo>_id`, busca `<modelo>` en SymbolTable.
-        2. Si no, busca un único modelo previo con `main key` compatible en SymbolTable.
-        """
+        # busca a que tabla y llave apunta una external key
         lower_field = field_name.lower()
         current_name = current_model.name.lower() if current_model else ""
 
-        # 1. Patrón id_<modelo> o <modelo>_id
+        # primero revisamos si el nombre tiene id_modelo o modelo_id
         candidate_names: List[str] = []
         if lower_field.startswith("id_") and len(lower_field) > 3:
             candidate_names.append(lower_field[3:])
@@ -313,7 +293,7 @@ class SQLCodeGenerator(Visitor):
                         self._normalize_identifier(pk_field.name),
                     )
 
-        # 2. Subcadena de nombre de modelo en el nombre del campo
+        # si no vemos si el nombre de alguna tabla viene en el campo
         for model_key, model_sym in self.symbol_table.models.items():
             if model_key == current_name:
                 continue
@@ -325,7 +305,7 @@ class SQLCodeGenerator(Visitor):
                         self._normalize_identifier(pk_field.name),
                     )
 
-        # 3. Único modelo previo con main key compatible
+        # como ultima opcion buscamos un modelo anterior con llave del mismo tipo
         prior_candidates = self._declared_models_so_far or [
             m for k, m in self.symbol_table.models.items() if k != current_name
         ]
@@ -346,9 +326,7 @@ class SQLCodeGenerator(Visitor):
 
         return None
 
-    # =====================================================================
-    # 2. TRADUCCIÓN DE OPERACIONES Y CADENAS DE MÉTODOS (DML)
-    # =====================================================================
+    # traduccion de operasiones dml y cadenas de metodos
 
     def visit_DbOperation(self, node: DbOperation) -> str:
         base_model = self.symbol_table.get_model(node.model_name)
@@ -358,7 +336,7 @@ class SQLCodeGenerator(Visitor):
             MethodCall(node.method, node.arguments, lineno=node.lineno)
         ]
 
-        # Pre-cargar modelos unidos con .link() en active_models para resolución/desambiguación
+        # cargar antes los modelos del link para revisar campos
         for call in calls:
             if call.method.lower() == "link" and call.arguments:
                 arg = call.arguments[0]
@@ -525,7 +503,7 @@ class SQLCodeGenerator(Visitor):
                 if args:
                     offset_val = self._translate_pagination_arg(args[0])
 
-        # Construir lista SELECT
+        # armar la parte del select
         select_items = projection_cols + aggregate_exprs
         select_sql = ", ".join(select_items) if select_items else "*"
 
@@ -539,8 +517,7 @@ class SQLCodeGenerator(Visitor):
             parts.append(f"WHERE {where_sql}")
 
         if explicit_group_cols:
-            # Regla crítica para PostgreSQL estricto:
-            # Incluir en GROUP BY las columnas no agregadas referenciadas en SELECT, HAVING y ORDER BY
+            # postgres pide meter en el group by todas las columnas que no son de agregacion
             all_group_cols = list(explicit_group_cols)
             for col in projection_cols:
                 if col not in all_group_cols:
@@ -579,7 +556,7 @@ class SQLCodeGenerator(Visitor):
         if target_model is None or not prior_models:
             return f"CROSS JOIN {target_table}"
 
-        # 1. ¿target_model tiene una columna EXTERNAL KEY que apunte a alguno de los modelos activos previos?
+        # revisar si la tabla nueva tiene llave foranea hacia las anteriores
         for f_sym in target_model.fields.values():
             if "EXTERNAL KEY" in f_sym.constraints:
                 ref = self._resolve_fk_between(target_model, f_sym, prior_models)
@@ -590,7 +567,7 @@ class SQLCodeGenerator(Visitor):
                     fk_col = self._normalize_identifier(f_sym.name)
                     return f"INNER JOIN {target_table} ON {left_table}.{pk_col} = {target_table}.{fk_col}"
 
-        # 2. ¿Alguno de los modelos activos previos tiene una columna EXTERNAL KEY que apunte a target_model?
+        # revisar si alguna tabla anterior apunta a la nueva
         for left_model in prior_models:
             for f_sym in left_model.fields.values():
                 if "EXTERNAL KEY" in f_sym.constraints:
@@ -602,7 +579,7 @@ class SQLCodeGenerator(Visitor):
                         pk_col = self._normalize_identifier(target_pk.name)
                         return f"INNER JOIN {target_table} ON {left_table}.{fk_col} = {target_table}.{pk_col}"
 
-        # 3. Sin EXTERNAL KEY declarada entre ambos -> CROSS JOIN
+        # si no tienen relacion directa mandamos cross join
         return f"CROSS JOIN {target_table}"
 
     def _resolve_fk_between(
@@ -629,9 +606,7 @@ class SQLCodeGenerator(Visitor):
 
         return None
 
-    # =====================================================================
-    # 3. EXPRESIONES, PRECEDENCIA, DESAMBIGUACIÓN Y NULL (EMPTY)
-    # =====================================================================
+    # manejo de expresioness precedencia y valores nulos
 
     def _join_filter_conditions(self, cond_nodes: List[Node]) -> str:
         translated: List[str] = []
@@ -675,12 +650,12 @@ class SQLCodeGenerator(Visitor):
                     return f"NOT ({operand_sql})"
                 return f"NOT {operand_sql}"
 
-            # Operadores unarios aritméticos '+' y '-'
+            # operadores unarios de mas y menos
             parent_prec = self.PRECEDENCE[f"UNARY_{op}"]
             child_prec = self._get_node_precedence(node.operand)
             operand_sql = self._translate_expression(node.operand, in_filter=in_filter)
 
-            # Evitar secuencias '--' en SQL (comentario de línea) y respetar precedencia
+            # ponemos parentesis para que dos signos menos seguidos no se vuelvan comentario sql
             if child_prec < parent_prec or (
                 op == "-" and (isinstance(node.operand, UnaryOperation) or operand_sql.startswith("-"))
             ):
@@ -690,7 +665,7 @@ class SQLCodeGenerator(Visitor):
         if isinstance(node, BinaryOperation):
             op = node.operator.upper()
 
-            # Comparaciones con empty -> IS NULL / IS NOT NULL
+            # cambiar comparaciones con empty por is null o is not null
             if op in ("=", "!="):
                 if self._is_empty_literal(node.right):
                     left_sql = self._translate_expression(node.left, in_filter=in_filter)
@@ -709,9 +684,7 @@ class SQLCodeGenerator(Visitor):
             if left_prec < parent_prec:
                 left_sql = f"({left_sql})"
 
-            # Para el hijo derecho, colocar paréntesis si tiene menor precedencia
-            # o si tiene igual precedencia en operadores aritméticos/relacionales
-            # (ej. a - (b - c) o (a * b) / (c % d))
+            # poner parentesis al lado derecho si hace falta por la jerarquia
             if right_prec < parent_prec or (
                 right_prec == parent_prec and op in ("+", "-", "*", "/", "%", "=", "!=", "<", ">", "<=", ">=")
             ):
@@ -784,12 +757,7 @@ class SQLCodeGenerator(Visitor):
         return name.strip().lower()
 
     def _qualify_column(self, field_name: str) -> str:
-        """
-        Desambigua nombres de columnas cuando hay `.link()` activo:
-        - Si la columna existe en más de un modelo del ámbito activo, califica con `<modelo_base>.<campo>`.
-        - Si pertenece únicamente a un modelo enlazado, califica con `<modelo_enlazado>.<campo>`.
-        - Si no hay `.link()` o solo pertenece al modelo base sin ambigüedad, devuelve `<campo>`.
-        """
+        # le pone el nombre de la tabla al campo cuando hay link y se repite
         col = self._normalize_identifier(field_name)
         if len(self.active_models) <= 1:
             return col
@@ -806,7 +774,7 @@ class SQLCodeGenerator(Visitor):
         return col
 
     def _extract_qualified_identifiers(self, node: Node) -> List[str]:
-        """Extrae todas las columnas referenciadas dentro de una expresión (para GROUP BY estricto)."""
+        # saca los nombres de columnas que aparecen dentro de una expresion
         cols: List[str] = []
         if isinstance(node, Identifier):
             cols.append(self._qualify_column(node.name))

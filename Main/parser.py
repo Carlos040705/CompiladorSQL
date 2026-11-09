@@ -7,7 +7,7 @@ from ast_nodes import (
     BinaryOperation, UnaryOperation
 )
 
-# Pila global de errores sintácticos
+# lista para guardar los errores sintacticos
 errores_sintacticos = []
 
 start = 'start'
@@ -18,7 +18,7 @@ def p_start(p):
     p[0] = Program(p[1], lineno=1)
 
 
-# 2.2.1 Programa en general
+# reglas para el programa general
 def p_programa_multiple(p):
     '''programa : sentencia programa'''
     if p[1] == '\n' or p[1] is None:
@@ -44,7 +44,7 @@ def p_sentencia(p):
     p[0] = p[1]
 
 
-# Recuperación en modo pánico a nivel de sentencia (sincroniza en SALTO_LINEA o DEDENT)
+# recuperacion de errores si falla una linea
 def p_sentencia_error(p):
     '''
     sentencia : error SALTO_LINEA
@@ -53,7 +53,7 @@ def p_sentencia_error(p):
     p[0] = '\n'
 
 
-# 2.2.2 Declaración de modelos (creación de tablas)
+# declaracion de modelos para crear las tablas
 def p_declaracion_modelo(p):
     '''declaracion_modelo : MODEL IDENTIFIER COLON SALTO_LINEA INDENT lista_campos DEDENT'''
     campos_validos = [c for c in p[6] if c is not None]
@@ -93,7 +93,7 @@ def p_campo(p):
     p[0] = Field(p[1], p[3], p[4], lineno=p.lineno(1))
 
 
-# 2.2.3 Tipos de datos y restricciones
+# tipos de datos y restricciones de las columnas
 def p_tipo_dato_simple(p):
     '''
     tipo_dato : STRING
@@ -138,7 +138,7 @@ def p_restriccion_default(p):
     p[0] = Constraint('DEFAULT', p[3], lineno=p.lineno(1))
 
 
-# 2.2.4 Operaciones sobre modelos y encadenamiento de métodos
+# operaciones sobre modelos y llamadas encadenadas
 def p_operacion_db(p):
     '''operacion_db : IDENTIFIER cadena_metodos'''
     p[0] = DbOperation(p[1], p[2], lineno=p.lineno(1))
@@ -184,7 +184,7 @@ def p_metodo(p):
     p[0] = p[1].lower() if isinstance(p[1], str) else p[1]
 
 
-# 2.2.5 Parámetros y valores
+# parmetros y valores que reciben los metodos
 def p_argumentos_opt(p):
     '''argumentos_opt : lista_argumentos'''
     p[0] = p[1]
@@ -213,8 +213,7 @@ def p_parametro(p):
         p[0] = p[1]
 
 
-# 2.2.6 Operaciones lógicas, relacionales, aritméticas y unarias
-# Precedencia de mayor a menor: () > OP_UNARIO > OP_MULT_DIV_MOD > OP_SUMA_RESTA > OP_RELACIONAL > NOT > AND > OR
+# expresiones logicas relacionales y aritmeticas por jerarquia
 def p_expresion(p):
     '''expresion : expresion_or'''
     p[0] = p[1]
@@ -350,7 +349,7 @@ def p_valor_identifier(p):
     p[0] = Identifier(p[1], lineno=p.lineno(1))
 
 
-# 2.3 Manejo de errores sintácticos con recuperación en modo pánico
+# funcion para capturar cuando hay error de sintaxis
 def p_error(p):
     if p:
         linea_inicio = p.lexer.lexdata.rfind('\n', 0, p.lexpos)
