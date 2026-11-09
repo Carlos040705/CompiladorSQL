@@ -1,3 +1,4 @@
+import re
 import ply.lex as lex
 
 errores_lexicos = []
@@ -95,6 +96,12 @@ t_RPAREN = r'\)'
 
 t_ignore = ' \t\r'
 
+_LEADING_INTERMEDIATE_COMMENTS_RE = re.compile(
+    r'^(?:[ \t\r\n]+|//[^\n]*(?:\n|$)|/\*[\s\S]*?\*/)+'
+)
+_STYLE_A_CONTINUATION_RE = re.compile(r'^\.[a-zA-Z_]')
+_STYLE_B_CONTINUATION_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*\s*\(')
+
 def t_MULTILINE_COMMENT(t):
     r'/\*(.|\n)*?\*/'
     t.lexer.lineno += t.value.count('\n')
@@ -138,20 +145,36 @@ def t_IDENTIFIER(t):
 def t_SALTO_LINEA(t):
     r'([ \t\r]*\n)+[ \t]*'
     t.lexer.lineno += t.value.count('\n')
-    
+
+    rest = t.lexer.lexdata[t.lexer.lexpos:]
+    rest_effective = _LEADING_INTERMEDIATE_COMMENTS_RE.sub('', rest)
+
+    # Caso 1 (Estilo A): la siguiente línea efectiva continúa la cadena con '.metodo'
+    if _STYLE_A_CONTINUATION_RE.match(rest_effective):
+        return None
+
+    # Caso 2 (Estilo B): la línea anterior terminó en '.' (DOT) sin líneas en blanco vacías
+    # y la siguiente línea continúa con 'metodo('
+    if getattr(t.lexer, 'last_token_type', None) == 'DOT' and t.value.count('\n') == 1:
+        if _STYLE_B_CONTINUATION_RE.match(rest) or (
+            rest.startswith(('//', '/*')) and _STYLE_B_CONTINUATION_RE.match(rest_effective)
+        ):
+            return None
+
     last_newline_idx = t.value.rfind('\n')
     whitespaces = t.value[last_newline_idx + 1:]
-    
+
     indent_level = 0
-    for char in whitespaces:
-        if char == '\t':
-            indent_level += 4
-        elif char == ' ':
-            indent_level += 1
-            
+    if rest.strip():
+        for char in whitespaces:
+            if char == '\t':
+                indent_level += 4
+            elif char == ' ':
+                indent_level += 1
+
     t.type = 'SALTO_LINEA'
     t.value = '\n'
-    
+
     if indent_level > t.lexer.indents[-1]:
         t.lexer.indents.append(indent_level)
         tok = lex.LexToken()
@@ -173,7 +196,7 @@ def t_SALTO_LINEA(t):
             msg = f"Error de indentación en la línea {t.lexer.lineno}: nivel {indent_level} no coincide con un bloque anterior."
             errores_lexicos.append(msg)
             print(msg)
-            
+
     return t
 
 def t_error(t):
@@ -186,22 +209,27 @@ def t_error(t):
 lexer = lex.lex()
 lexer.indents = [0]
 lexer.token_queue = []
+lexer.last_token_type = None
 
 lexer._original_input = lexer.input
 def input_wrapper(data):
     lexer.indents = [0]
     lexer.token_queue = []
     lexer.lineno = 1
+    lexer.last_token_type = None
     lexer._original_input(data)
 lexer.input = input_wrapper
 
 lexer._original_token = lexer.token
 def token_wrapper():
     if lexer.token_queue:
-        return lexer.token_queue.pop(0)
+        tok = lexer.token_queue.pop(0)
+        lexer.last_token_type = tok.type
+        return tok
     
     tok = lexer._original_token()
     if tok is not None:
+        lexer.last_token_type = tok.type
         return tok
         
     if len(lexer.indents) > 1:
@@ -211,6 +239,7 @@ def token_wrapper():
         tok_dedent.value = lexer.indents[-1] if lexer.indents else 0
         tok_dedent.lineno = lexer.lineno
         tok_dedent.lexpos = lexer.lexpos
+        lexer.last_token_type = tok_dedent.type
         return tok_dedent
         
     return None

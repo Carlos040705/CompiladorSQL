@@ -5,21 +5,21 @@
 // =========================================================================
 
 Model Estudiante:
-	matricula: auto main key
-	nombre: string
-	edad: num
-	semestre: num
-	promedio: decimal(10,2)
-	saldo: decimal(10,2)
-	creditos: num
-	activo: bool
-	becado: bool
+    matricula: auto main key
+    nombre: string
+    edad: num
+    semestre: num
+    promedio: decimal(10,2)
+    saldo: decimal(10,2)
+    creditos: num
+    activo: bool
+    becado: bool
 
 Model Curso:
-	id_curso: auto main key
-	nombre_curso: string
-	creditos: num
-	activo: bool
+    id_curso: auto main key
+    nombre_curso: string
+    creditos: num
+    activo: bool
 
 // 1. Precedencia aritmética y asociatividad por la izquierda
 // Debe construir BinaryOperation anidados a la izquierda: ((100 - 20) - 10)
@@ -47,4 +47,13 @@ Estudiante.find().if(nombre = "Jose")
 Estudiante.find(nombre, edad).if(edad >= 18).up(edad)
 Estudiante.find(nombre, promedio).if(becado = true).down(promedio).take(5)
 Estudiante.find(semestre, promedio).link(Curso).if(activo = true).group(semestre).ifgroup(promedio > 8.0)
-Estudiante.find(matricula, nombre).link(Curso).if(not (creditos < 4 or activo = false)).group(matricula).ifgroup(creditos >= 6).up(nombre).take(20).skip(5)
+
+
+Estudiante.find(matricula, nombre)
+.link(Curso)
+.if(not (creditos < 4 or activo = false))
+.group(matricula)
+.ifgroup(creditos >= 6)
+.up(nombre)
+.take(20)
+.skip(5)

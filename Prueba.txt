@@ -1,7 +1,7 @@
 
 //Este es un comentario de una línea
 model estudiante:
-   nombre: string unique
+    nombre: string unique
     matricula: auto
     edad: num
     peso: decimal(10,5)
@@ -13,4 +13,9 @@ Esto es un comentario de varias lineas
 estudiante.new(nombre = "Jose Cruz Castillo", edad = 67, peso = 160.00)
 
 estudiante.new(nombre = "Bernardo Manuel Vargas", edad = 23, peso = 85)
+
+estudiante.find()
+.if(edad>60)
+.modify(nombre = "José Ángel Figueroa")
+
 

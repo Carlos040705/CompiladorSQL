@@ -1,1 +1,1 @@
-INSERT INTO estudiante (nombre, edad, peso) VALUES ('Bernardo Manuel Vargas', 23, 85);
+UPDATE estudiante SET nombre = 'José Ángel Figueroa' WHERE edad > 60;

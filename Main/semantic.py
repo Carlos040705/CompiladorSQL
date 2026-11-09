@@ -24,6 +24,7 @@ _FIELD_FULL_RE = re.compile(
     r"(?:\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\))?(.*)$"
 )
 _DML_OPERATION_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*\s*\.\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(")
+_DML_CONTINUATION_RE = re.compile(r"^(?:\.[a-zA-Z_][a-zA-Z0-9_]*|[a-zA-Z_][a-zA-Z0-9_]*\s*\()")
 _VALID_FIELD_TYPES = {"STRING", "TEXT", "NUM", "AUTO", "DECIMAL", "BOOL", "DATE"}
 
 
@@ -72,15 +73,17 @@ def _extract_model_blocks_list(full_code: str) -> List[str]:
             continue
 
         if current_block is not None:
-            # ¿Es una declaración de atributo `<identificador> : <tipo>...` y no una operación DML?
+            # ¿Es una declaración de atributo `<identificador> : <tipo>...` y no una operación DML ni continuación?
             if (
                 _FIELD_HEADER_RE.match(code_stripped)
                 and not _MODEL_HEADER_RE.match(code_stripped)
                 and not _DML_OPERATION_RE.match(code_stripped)
+                and not code_stripped.startswith(".")
+                and not _DML_CONTINUATION_RE.match(code_stripped)
             ):
                 current_block.append("    " + code_stripped)
             else:
-                # Fin del bloque model al encontrar una operación DML u otra sentencia
+                # Fin del bloque model al encontrar una operación DML, continuación `.metodo(...)` u otra sentencia
                 if len(current_block) > 1:
                     blocks.append(current_block)
                 current_block = None
@@ -172,6 +175,8 @@ def normalize_dsl_fragment(fragment: str) -> str:
                 _FIELD_HEADER_RE.match(code_stripped)
                 and not _MODEL_HEADER_RE.match(code_stripped)
                 and not _DML_OPERATION_RE.match(code_stripped)
+                and not code_stripped.startswith(".")
+                and not _DML_CONTINUATION_RE.match(code_stripped)
             ):
                 normalized_lines.append("    " + raw_line.lstrip(" "))
             else:
@@ -415,7 +420,11 @@ def _parse_models_fallback_regex(full_code: str) -> SymbolTable:
             continue
 
         if current_model is not None:
-            if _DML_OPERATION_RE.match(code_stripped):
+            if (
+                _DML_OPERATION_RE.match(code_stripped)
+                or code_stripped.startswith(".")
+                or _DML_CONTINUATION_RE.match(code_stripped)
+            ):
                 if current_model.fields:
                     table.models[current_model.name.lower()] = current_model
                 current_model = None

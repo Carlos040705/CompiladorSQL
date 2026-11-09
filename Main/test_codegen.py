@@ -242,6 +242,48 @@ Estudiante.modify(saldo = -(-5))
         ])
         self.assertEqual(extracted, ["estudiante", "curso"])
 
+    def test_multiline_method_chaining_style_a_with_indentation_and_comments(self):
+        source = """Model Estudiante:
+    matricula: auto main key
+    nombre: string required
+    semestre: num
+    promedio: decimal(4,2)
+
+Estudiante.find(matricula, nombre, promedio)
+    .if(semestre >= 5)
+    // Comentario intermedio opcional
+    .up(promedio)
+    /* Comentario de bloque intermedio */
+    .take(10)
+    .skip(0)
+"""
+        stmts = compile_to_sql(source)
+        self.assertEqual(len(stmts), 2)
+        self.assertEqual(
+            stmts[1],
+            "SELECT matricula, nombre, promedio FROM estudiante WHERE semestre >= 5 ORDER BY promedio ASC LIMIT 10 OFFSET 0;",
+        )
+
+    def test_multiline_method_chaining_style_b_with_trailing_dot(self):
+        source = """Model Estudiante:
+    matricula: auto main key
+    nombre: string required
+    semestre: num
+    promedio: decimal(4,2)
+
+Estudiante.find(matricula, nombre, promedio).
+    if(semestre >= 5).
+    up(promedio).
+    take(10).
+    skip(0)
+"""
+        stmts = compile_to_sql(source)
+        self.assertEqual(len(stmts), 2)
+        self.assertEqual(
+            stmts[1],
+            "SELECT matricula, nombre, promedio FROM estudiante WHERE semestre >= 5 ORDER BY promedio ASC LIMIT 10 OFFSET 0;",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

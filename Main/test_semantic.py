@@ -288,6 +288,76 @@ Valido.new(nombre = "Prueba")
         ctx_table.clear()
         self.assertIsNotNone(session_table.get_model("Valido"))
 
+    def test_multiline_method_chaining_preserves_exact_line_number_on_semantic_error(self):
+        # Línea 1-4: declaración de modelo
+        # Línea 6: Estudiante.find(matricula, nombre)
+        # Línea 7:     .if(edad >= 18)
+        # Línea 8:     // Comentario intermedio
+        # Línea 9:     .up(edad)
+        # Línea 10:    .take(-5)  <-- Error semántico en Línea 10
+        code_style_a = (
+            "Model Estudiante:\n"
+            "    matricula: auto main key\n"
+            "    nombre: string required\n"
+            "    edad: num\n"
+            "\n"
+            "Estudiante.find(matricula, nombre)\n"
+            "    .if(edad >= 18)\n"
+            "    // Comentario intermedio\n"
+            "    .up(edad)\n"
+            "    .take(-5)\n"
+        )
+        sem_err = analyze_source(code_style_a)
+        self.assertEqual(len(sem_err), 1)
+        self.assertIn("(Línea 10)", sem_err[0])
+        self.assertIn("take()", sem_err[0])
+
+        # Estilo B: punto al final de la línea previa, error en la línea 9
+        code_style_b = (
+            "Model Estudiante:\n"
+            "    matricula: auto main key\n"
+            "    nombre: string required\n"
+            "    edad: num\n"
+            "\n"
+            "Estudiante.find(matricula, nombre).\n"
+            "    if(edad >= 18).\n"
+            "    up(edad).\n"
+            "    take(-5)\n"
+        )
+        sem_err_b = analyze_source(code_style_b)
+        self.assertEqual(len(sem_err_b), 1)
+        self.assertIn("(Línea 9)", sem_err_b[0])
+        self.assertIn("take()", sem_err_b[0])
+
+    def test_prueba_errores_sintacticos_detects_all_six_syntax_errors(self):
+        from pathlib import Path
+        root_dir = Path(__file__).resolve().parent.parent
+        error_file = root_dir / "prueba_errores_sintacticos.txt"
+        self.assertTrue(error_file.is_file())
+        source = error_file.read_text(encoding="utf-8")
+
+        errores_lexicos.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lexer.input(source if source.endswith("\n") else source + "\n")
+            tokens = []
+            while True:
+                tok = lexer.token()
+                if tok is None:
+                    break
+                tokens.append(tok)
+        self.assertEqual(errores_lexicos, [])
+
+        errores_sintacticos.clear()
+        token_iter = iter(tokens)
+        with contextlib.redirect_stdout(io.StringIO()):
+            parser.parse(tokenfunc=lambda: next(token_iter, None))
+
+        self.assertEqual(len(errores_sintacticos), 6)
+        joined_errors = "\n".join(errores_sintacticos)
+        # Verificar que el Error 4 (punto colgante en Línea 18) y el Error 5 (Línea 21) se siguen reportando
+        self.assertIn("Línea 18", joined_errors)
+        self.assertIn("Línea 21", joined_errors)
+
 
 if __name__ == "__main__":
     unittest.main()
